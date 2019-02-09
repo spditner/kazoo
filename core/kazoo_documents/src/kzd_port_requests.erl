@@ -307,23 +307,29 @@ port_authority(Doc, Default) ->
 set_port_authority(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_authority">>], PortAuthority, Doc).
 
--spec find_port_authority(doc()) -> kz_term:api_binary().
-find_port_authority(Doc) ->
-    case port_authority(Doc) of
-        'undefined' ->
-            AccountId = kz_doc:account_id(Doc),
-            case kapps_util:get_master_account_id() of
-                {'ok', MasterAccountId} ->
-                    PortAuthority = find_port_authority(MasterAccountId, AccountId),
-                    lager:debug("using account ~s as port authority", [PortAuthority]),
-                    PortAuthority;
-                {'error', _} ->
-                    lager:debug("failed to find port authority, master account is undefined"),
-                    'undefined'
-            end;
-        PortAuthority ->
+-spec find_port_authority(doc() | kz_term:ne_binary()) -> kz_term:api_ne_binary().
+find_port_authority(?NE_BINARY = AccountId) ->
+    case kapps_util:get_master_account_id() of
+        {'ok', MasterAccountId} ->
+            PortAuthority = find_port_authority(MasterAccountId, AccountId),
             lager:debug("using account ~s as port authority", [PortAuthority]),
-            PortAuthority
+            PortAuthority;
+        {'error', _} ->
+            lager:debug("failed to find port authority, master account is undefined"),
+            'undefined'
+    end;
+find_port_authority(Doc) ->
+    case kz_json:is_json_object(Doc) of
+        'true' ->
+            case port_authority(Doc) of
+                'undefined' ->
+                    find_port_authority(kz_doc:account_id(Doc));
+                PortAuthority ->
+                    lager:debug("using account ~s as port authority", [PortAuthority]),
+                    PortAuthority
+            end;
+        'false' ->
+            'undefined'
     end.
 
 -spec find_port_authority(kz_term:ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_binary().

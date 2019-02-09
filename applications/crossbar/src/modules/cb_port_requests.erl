@@ -21,7 +21,6 @@
         ,patch/3, patch/2
         ,post/2, post/4
         ,delete/2, delete/4
-        ,authority/1
         ,acceptable_content_types/0
         ,validate_request/2
         ]).
@@ -46,6 +45,7 @@
 -define(LISTING_BY_STATE, <<"port_requests/listing_by_state">>).
 -define(LISTING_BY_NUMBER, <<"port_requests/listing_by_number">>).
 -define(DESCENDANT_LISTING_BY_STATE, <<"port_requests/listing_by_descendant_state">>).
+-define(AGENT_LISTING_BY_STATE, <<"port_requests/agent_listing_by_state">>).
 
 -define(DESCENDANTS, <<"descendants">>).
 
@@ -114,20 +114,6 @@ allowed_methods() ->
 -spec allowed_methods(path_token()) -> http_methods().
 allowed_methods(?PATH_TOKEN_LAST_SUBMITTED) ->
     [?HTTP_GET];
-allowed_methods(?PORT_SUBMITTED) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_PENDING) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_SCHEDULED) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_COMPLETED) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_REJECTED) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_CANCELED) ->
-    [?HTTP_GET];
-allowed_methods(?PORT_UNCONFIRMED) ->
-    [?HTTP_GET];
 allowed_methods(_PortRequestId) ->
     [?HTTP_GET, ?HTTP_POST, ?HTTP_PATCH, ?HTTP_DELETE].
 
@@ -166,7 +152,6 @@ allowed_methods(_PortRequestId, ?PORT_ATTACHMENT, _AttachmentId) ->
 %% '''
 %% @end
 %%------------------------------------------------------------------------------
-
 -spec resource_exists() -> 'true'.
 resource_exists() -> 'true'.
 
@@ -223,7 +208,6 @@ content_types_provided_get(Context, Id, AttachmentId) ->
 %% Of the form `{atom, [{Type, SubType}]} :: {to_json, [{<<"application">>, <<"json">>}]}'
 %% @end
 %%------------------------------------------------------------------------------
-
 -spec content_types_accepted(cb_context:context(), path_token(), path_token()) ->
                                     cb_context:context().
 content_types_accepted(Context, _Id, ?PORT_ATTACHMENT) ->
@@ -251,30 +235,17 @@ content_types_accepted(Context, _Id, ?PORT_ATTACHMENT, _AttachmentId) ->
 %% Generally, use crossbar_doc to manipulate the cb_context{} record
 %% @end
 %%------------------------------------------------------------------------------
-
--spec validate(cb_context:context()) ->
-                      cb_context:context().
+-spec validate(cb_context:context()) -> cb_context:context().
 validate(Context) ->
-    validate_port_requests(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)).
+    validate_port_requests(set_port_authority(Context), cb_context:req_verb(Context)).
 
--spec validate(cb_context:context(), path_token()) ->
-                      cb_context:context().
-validate(Context, ?PATH_TOKEN_LAST_SUBMITTED) ->
-    last_submitted(Context);
-validate(Context, ?PORT_UNCONFIRMED = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_SUBMITTED = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_PENDING = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_SCHEDULED = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_COMPLETED = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_REJECTED = Type) ->
-    load_summary_by_type(Context, Type);
-validate(Context, ?PORT_CANCELED = Type) ->
-    load_summary_by_type(Context, Type);
+-spec validate_port_requests(cb_context:context(), http_method()) -> cb_context:context().
+validate_port_requests(Context, ?HTTP_GET) ->
+    summary(Context);
+validate_port_requests(Context, ?HTTP_PUT) ->
+    create(Context).
+
+-spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, Id) ->
     validate_port_request(Context, Id, cb_context:req_verb(Context)).
 
@@ -538,7 +509,6 @@ delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
 %%% Internal functions
 %%%=============================================================================
 
-
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -552,13 +522,6 @@ load_port_request(Context, Id) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec validate_port_requests(cb_context:context(), req_nouns(), http_method()) ->
-                                    cb_context:context().
-validate_port_requests(Context, _, ?HTTP_GET) ->
-    summary(Context);
-validate_port_requests(Context, _, ?HTTP_PUT) ->
-    create(Context).
-
 -spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
                                    cb_context:context().
 validate_port_request(Context, Id, ?HTTP_GET) ->
@@ -667,14 +630,6 @@ read(Context, Id) ->
         _ -> Context1
     end.
 
--spec authority(kz_term:ne_binary()) -> kz_term:api_binary().
-authority(AccountId) ->
-    case kzd_whitelabel:fetch(AccountId) of
-        {'error', _R} -> 'undefined';
-        {'ok', JObj} ->
-            kzd_whitelabel:port_authority(JObj)
-    end.
-
 %%------------------------------------------------------------------------------
 %% @doc Update an existing menu document with the data provided, if it is
 %% valid
@@ -684,6 +639,10 @@ authority(AccountId) ->
 update(Context, Id) ->
     OnSuccess = fun(C) -> on_successful_validation(C, Id) end,
     cb_context:validate_request_data(?SCHEMA, Context, OnSuccess).
+
+%%%=============================================================================
+%%% Summary functions
+%%%=============================================================================
 
 %%------------------------------------------------------------------------------
 %% @doc Attempt to load a summarized listing of all instances of this
@@ -697,6 +656,10 @@ summary(Context) ->
         Number -> load_summary_by_number(Context, Number)
     end.
 
+%%%=============================================================================
+%%% Summary by Types functions
+%%%=============================================================================
+
 -spec summarize_by_types(cb_context:context()) -> cb_context:context().
 summarize_by_types(Context) ->
     case cb_context:req_value(Context, <<"by_types">>) of
@@ -705,6 +668,7 @@ summarize_by_types(Context) ->
         <<"progressing">> -> load_summary_by_types(Context, ?PORT_PROGRESSING_STATES);
         <<"suspended">> -> load_summary_by_types(Context, ?PORT_SUSPENDED_STATES);
         <<"completed">> -> load_summary_by_types(Context, ?PORT_COMPLETED_STATES);
+        ?PATH_TOKEN_LAST_SUBMITTED -> last_submitted(Context);
         Types -> summarize_by_types(Context, Types)
     end.
 
@@ -725,98 +689,81 @@ summarize_by_types(Context, Types) when is_list(Types) ->
 summarize_by_types(Context, Types) ->
     summarize_by_types(Context, binary:split(kz_term:to_binary(Types), <<",">>)).
 
-%%%=============================================================================
-%%% Load Summary By Range
-%%%=============================================================================
-
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec load_summary_by_type(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
-load_summary_by_type(Context, Type) ->
-    lager:debug("loading summary for ~s", [Type]),
-    IsRanged = should_range_summary(Type),
-    maybe_normalize_summary_results(
-      load_summary(Context, view_key_options(Context, Type, IsRanged))
-     ).
-
 -spec load_summary_by_types(cb_context:context(), kz_term:ne_binaries()) -> cb_context:context().
 load_summary_by_types(Context, Types) ->
     lager:debug("loading summary for port requests with types ~s"
                ,[kz_binary:join(Types)]
                ),
-    Funs = fun(Type, C) ->
-                   IsRanged = should_range_summary(Type),
-                   load_summary_fold(C, Type, IsRanged)
-           end,
-    Context1 = cb_context:setters(Context
-                                 ,[{fun cb_context:set_resp_data/2, []}
-                                  ,{fun cb_context:set_resp_status/2, 'success'}
-                                  ]
-                                 ),
-    maybe_normalize_summary_results(lists:foldl(Funs, Context1, Types)).
+    load_summary_by_types(Context, Types, []).
 
--spec should_range_summary(kz_term:ne_binary()) -> boolean().
-should_range_summary(Type) ->
-    lists:member(Type, ?PORT_COMPLETED_STATES).
-
--spec load_summary_fold(cb_context:context(), kz_term:ne_binary(), boolean()) -> cb_context:context().
-load_summary_fold(Context, Type, IsRanged) ->
-    Summary = cb_context:resp_data(Context),
-    case cb_context:resp_data(load_summary(Context, view_key_options(Context, Type, IsRanged))) of
-        TypeSummary when is_list(TypeSummary) ->
-            cb_context:set_resp_data(Context, Summary ++ TypeSummary);
-        _Else -> Context
+-spec load_summary_by_types(cb_context:context(), kz_term:ne_binaries(), kz_json:objects()) -> cb_context:context().
+load_summary_by_types(Context, [], JObjs) ->
+    Setters = [{fun cb_context:set_resp_data/2, JObjs}
+              ,{fun cb_context:set_resp_status/2, 'success'}
+              ],
+    normalize_type_summarize_results(cb_context:setters(Context, Setters));
+load_summary_by_types(Context, [Type | Types], JObjs) ->
+    C1 = load_summary_by_type(Context, Type),
+    case cb_context:resp_status(C1) =:= 'success' of
+        'true' ->
+            RespData = cb_context:resp_data(C1),
+            load_summary_by_types(Context, Types, JObjs ++ RespData);
+        'false' -> C1
     end.
 
--spec load_summary(cb_context:context(), {boolean(), crossbar_view:options()}) -> cb_context:context().
-load_summary(Context, {IsRanged, Opts}) ->
-    View = get_summarize_view_name(Context),
+load_summary_by_type(Context, Type) ->
+    lager:debug("loading summary for port requests with type ~s"
+               ,[Type]
+               ),
+    IsRanged = lists:member(Type, ?PORT_COMPLETED_STATES),
+    IsAuthority = cb_context:fetch(Context, 'is_port_authority'),
+    View = type_summarize_view_name(cb_context:req_nouns(Context)),
     Options = [{'mapper', fun normalize_view_results/2}
               ,{'databases', [?KZ_PORT_REQUESTS_DB]}
               ,{'unchunkable', 'true'}
               ,{'should_paginate', 'false'}
               ,'include_docs'
-               | Opts
+               | by_types_view_options(Context, Type, IsRanged, IsAuthority)
               ],
     case IsRanged of
         'true' -> crossbar_view:load_range(Context, View, Options);
         'false' -> crossbar_view:load(Context, View, Options)
     end.
 
--spec view_key_options(cb_context:context(), kz_term:ne_binary(), boolean()) -> {boolean(), crossbar_view:options()}.
-view_key_options(Context, Type, 'true') ->
-    {'true'
-    ,[{'range_start_keymap', [cb_context:account_id(Context), Type]}
-     ,{'range_end_keymap', [cb_context:account_id(Context), Type]}
-     ,{'range_key_name', <<"modified">>}
-     ]
-    };
-view_key_options(Context, Type, 'false') ->
-    {'false'
-    ,[{'startkey', [cb_context:account_id(Context), Type]}
-     ,{'endkey', [cb_context:account_id(Context), Type, kz_json:new()]}
-     ]
-    }.
+-spec by_types_view_options(cb_context:context(), kz_term:ne_binary(), boolean(), boolean()) -> crossbar_view:options().
+by_types_view_options(Context, Type, 'true', 'true') ->
+    [{'range_start_keymap', [cb_context:fetch(Context, 'port_authority_id'), Type]}
+    ,{'range_end_keymap', [cb_context:fetch(Context, 'port_authority_id'), Type]}
+    ,{'range_key_name', <<"modified">>}
+    ];
+by_types_view_options(Context, Type, 'false', 'true') ->
+    [{'startkey', [cb_context:fetch(Context, 'port_authority_id'), Type]}
+    ,{'endkey', [cb_context:fetch(Context, 'port_authority_id'), Type, kz_json:new()]}
+    ];
+by_types_view_options(Context, Type, 'true', 'false') ->
+    [{'range_start_keymap', [cb_context:account_id(Context), Type]}
+    ,{'range_end_keymap', [cb_context:account_id(Context), Type]}
+    ,{'range_key_name', <<"modified">>}
+    ];
+by_types_view_options(Context, Type, 'false', 'false') ->
+    [{'startkey', [cb_context:account_id(Context), Type]}
+    ,{'endkey', [cb_context:account_id(Context), Type, kz_json:new()]}
+    ].
 
+-spec type_summarize_view_name(req_nouns()) -> kz_term:ne_binary().
+type_summarize_view_name([{<<"port_requests">>, _}]) ->
+    ?AGENT_LISTING_BY_STATE;
+type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, ?DESCENDANTS} | _]) ->
+    ?DESCENDANT_LISTING_BY_STATE;
+type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
+    ?LISTING_BY_STATE.
 
--spec get_summarize_view_name(cb_context:context()) -> kz_term:ne_binary().
-get_summarize_view_name(Context) ->
-    case props:get_value(<<"accounts">>, cb_context:req_nouns(Context)) of
-        [_AccountId, ?DESCENDANTS] -> ?DESCENDANT_LISTING_BY_STATE;
-        _Params -> ?LISTING_BY_STATE
-    end.
-
--spec maybe_normalize_summary_results(cb_context:context()) -> cb_context:context().
-maybe_normalize_summary_results(Context) ->
-    case cb_context:resp_status(Context) of
-        'success' -> normalize_summary_results(Context);
-        _Else -> Context
-    end.
-
--spec normalize_summary_results(cb_context:context()) -> cb_context:context().
-normalize_summary_results(Context) ->
+-spec normalize_type_summarize_results(cb_context:context()) -> cb_context:context().
+normalize_type_summarize_results(Context) ->
     Dict = lists:foldl(fun(JObj, D) ->
                                AccountId = kz_json:get_value(<<"account_id">>, JObj),
                                NewJObj   = filter_private_comments(Context, JObj),
@@ -857,39 +804,24 @@ get_account_names(Keys) ->
 %%------------------------------------------------------------------------------
 -spec load_summary_by_number(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 load_summary_by_number(Context, Number) ->
-    E164 = knm_converters:normalize(Number),
-    case props:get_value(<<"accounts">>, cb_context:req_nouns(Context)) of
-        [AccountId] ->
-            load_account_summary_by_number(Context, [[AccountId, E164]]);
-        [AccountId, ?PORT_DESCENDANTS] ->
-            load_account_summary_by_number(Context, lists:reverse(
-                                                      [[AnAccountId, E164]
-                                                       || AnAccountId <- kapps_util:account_descendants(AccountId)
-                                                      ]));
-        _ -> load_global_summary_by_number(Context, E164)
-    end.
-
--spec load_global_summary_by_number(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
-load_global_summary_by_number(Context, Number) ->
-    load_summary(Context, {'keymap', Number}, ?LISTING_BY_NUMBER).
-
--spec load_account_summary_by_number(cb_context:context(), [kz_term:ne_binaries()]) ->
-                                            cb_context:context().
-load_account_summary_by_number(Context, Keys) ->
-    load_summary(Context, {'keys', Keys}, ?ALL_PORT_REQ_NUMBERS).
-
--spec load_summary(cb_context:context()
-                  ,{'keymap', kz_term:ne_binary()} |
-                   {'keys', [kz_term:ne_binaries()]}
-                  ,kz_term:ne_binary()
-                  ) -> cb_context:context().
-load_summary(Context, Key, View) ->
-    Options = [Key
-              ,{'mapper', fun normalize_view_results/2}
+    Options = [{'keymap', knm_converters:normalize(Number)}
+              ,{'mapper', fun normalize_number_summarize_results/3}
               ,{'databases', [?KZ_PORT_REQUESTS_DB]}
               ,'include_docs'
               ],
-    crossbar_view:load(Context, View, Options).
+    crossbar_view:load(Context, ?LISTING_BY_NUMBER, Options).
+
+-spec normalize_number_summarize_results(cb_context:context(), kz_json:object(), kz_json:objects()) ->
+                                                kz_json:objects().
+normalize_number_summarize_results(Context, JObj, Acc) ->
+    case lists:member(cb_context:auth_account_id(Context)
+                     ,kzd_accounts:tree(JObj)
+                     )
+         orelse cb_context:is_superduper_admin(Context)
+    of
+        'true' -> normalize_view_results(JObj, Acc);
+        'false' -> Acc
+    end.
 
 %%%=============================================================================
 %%% Load Last Submitted
@@ -943,7 +875,7 @@ prepare_timeline(Context, Doc) ->
 %% calls by `validate(Context, Id, ?PATH_TOKEN_TIMELINE)'
 -spec maybe_prepare_timeline(cb_context:context()) -> cb_context:context().
 maybe_prepare_timeline(Context) ->
-    case success =:= cb_context:resp_status(Context) of
+    case 'success' =:= cb_context:resp_status(Context) of
         false -> Context;
         true ->
             NewDoc = prepare_timeline(Context, cb_context:doc(Context)),
@@ -1045,15 +977,18 @@ on_successful_validation(Context, _Id, 'false') ->
 %%------------------------------------------------------------------------------
 -spec can_update_port_request(cb_context:context()) -> boolean().
 can_update_port_request(Context) ->
-    lager:debug("port request: ~p", [cb_context:doc(Context)]),
+    lager:debug("check can update port request: ~p", [kz_doc:id(cb_context:doc(Context))]),
     can_update_port_request(Context, knm_port_request:current_state(cb_context:doc(Context))).
 
 -spec can_update_port_request(cb_context:context(), kz_term:ne_binary()) -> boolean().
 can_update_port_request(_Context, ?PORT_UNCONFIRMED) ->
+    lager:debug("port is in unconfirmed state, allowing update"),
     'true';
 can_update_port_request(_Context, ?PORT_REJECTED) ->
+    lager:debug("port is in rejected state, allowing update"),
     'true';
-can_update_port_request(Context, _) ->
+can_update_port_request(Context, _State) ->
+    lager:debug("port is in ~s state, check if the requestor is superduper admin", [_State]),
     cb_context:is_superduper_admin(cb_context:auth_account_id(Context)).
 
 %%------------------------------------------------------------------------------
@@ -1495,3 +1430,24 @@ create_QR_code(AccountId, PortRequestId) ->
             lager:debug("failed to generate QR code: ~p", [_E]),
             'undefined'
     end.
+
+-spec set_port_authority(cb_context:context()) -> cb_context:context().
+set_port_authority(Context) ->
+    AccountId = authority_type(Context, cb_context:req_nouns(Context)),
+    case kzd_port_requests:find_port_authority(AccountId) of
+        'undefined' ->
+            lager:warning("can not find port authority, but allowing the request anyway"),
+            Context;
+        PortAuthority ->
+            AuthAccountId = cb_context:auth_account_id(Context),
+            Setters = [{fun cb_context:store/3, 'port_authority_id', PortAuthority}
+                      ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= PortAuthority}
+                      ],
+            cb_context:setters(Context, Setters)
+    end.
+
+-spec authority_type(cb_context:context(), req_nouns()) -> kz_term:ne_binary().
+authority_type(Context, [{<<"port_requests">>, _}]) ->
+    cb_context:auth_account_id(Context);
+authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
+    cb_context:account_id(Context).

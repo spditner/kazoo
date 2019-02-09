@@ -67,15 +67,27 @@ current_state(JObj) ->
 -spec public_fields(kz_json:object()) -> kz_json:object().
 public_fields(JObj) ->
     As = kz_doc:attachments(JObj, kz_json:new()),
+    ReadOnly = read_only_public_fields(JObj),
     kz_json:set_values([{<<"id">>, kz_doc:id(JObj)}
                        ,{<<"created">>, kz_doc:created(JObj)}
                        ,{<<"updated">>, kz_doc:modified(JObj)}
                        ,{<<"uploads">>, normalize_attachments(As)}
                        ,{<<"port_state">>, kz_json:get_ne_binary_value(?PORT_PVT_STATE, JObj, ?PORT_UNCONFIRMED)}
                        ,{<<"sent">>, kz_json:is_true(?PORT_PVT_SENT, JObj)}
+                       ,{<<"_read_only">>, ReadOnly}
                        ]
                       ,kz_doc:public_fields(JObj)
                       ).
+
+-spec read_only_public_fields(kz_json:object()) -> kz_term:api_object().
+read_only_public_fields(Doc) ->
+    JObj = kz_json:from_list(
+             [{<<"port_authority">>, kzd_port_requests:port_authority(Doc)}]
+            ),
+    case kz_json:is_empty(JObj) of
+        'true' -> 'undefined';
+        'false' -> JObj
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc
