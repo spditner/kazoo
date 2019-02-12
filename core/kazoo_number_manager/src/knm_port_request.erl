@@ -9,7 +9,7 @@
 -export([current_state/1
         ,public_fields/1
         ,get/1
-        ,new/4
+        ,new/2
         ,account_active_ports/1
         ,descendant_active_ports/1
         ,account_has_active_port/1
@@ -196,16 +196,17 @@ normalize_numbers(PortReq) ->
 normalize_number_map(N, Meta) ->
     {knm_converters:normalize(N), Meta}.
 
--spec new(kz_json:object(), kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_json:object().
-new(PortReq, ?MATCH_ACCOUNT_RAW(AuthAccountId), AuthUserId, PortAuthorityId) ->
+-spec new(kz_json:object(), kz_term:proplist()) -> kz_json:object().
+new(PortReq, Options) ->
     Normalized = normalize_numbers(PortReq),
-    #{auth_account_name := AuthAccountName
-     } = Metadata = transition_metadata(AuthAccountId, AuthUserId),
+    Metadata = transition_metadata(props:get_value('auth_by', Options)
+                                  ,props:get_value('auth_user_id', Options)
+                                  ),
     Unconf = [{?PORT_PVT_TYPE, ?TYPE_PORT_REQUEST}
              ,{?PORT_PVT_STATE, ?PORT_UNCONFIRMED}
              ,{?PORT_PVT_TRANSITIONS, [transition_metadata_jobj(undefined, ?PORT_UNCONFIRMED, Metadata)]}
-             ,{<<"pvt_account_name">>, AuthAccountName}
-             ,{<<"pvt_port_authority">>, PortAuthorityId}
+             ,{<<"pvt_account_name">>, props:get('account_name', Options)} %% makes port listing sane in crossbar
+             ,{<<"pvt_port_authority">>, props:get_value('port_authority_id', Options)}
              ],
     kz_json:set_values(Unconf, Normalized).
 

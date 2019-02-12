@@ -311,9 +311,7 @@ set_port_authority(Doc, PortAuthority) ->
 find_port_authority(?NE_BINARY = AccountId) ->
     case kapps_util:get_master_account_id() of
         {'ok', MasterAccountId} ->
-            PortAuthority = find_port_authority(MasterAccountId, AccountId),
-            lager:debug("using account ~s as port authority", [PortAuthority]),
-            PortAuthority;
+            find_port_authority(MasterAccountId, AccountId);
         {'error', _} ->
             lager:debug("failed to find port authority, master account is undefined"),
             'undefined'
@@ -336,32 +334,26 @@ find_port_authority(Doc) ->
 find_port_authority('undefined', 'undefined') ->
     lager:debug("master and account id is undefined"),
     'undefined';
+
 find_port_authority(MasterAccountId, 'undefined') ->
     lager:debug("account id is undefined, checking master"),
     find_port_authority(MasterAccountId, MasterAccountId);
+
 find_port_authority(MasterAccountId, MasterAccountId) ->
-    case kzd_whitelabel:fetch(MasterAccountId) of
-        {'error', _R} ->
-            lager:debug("failed to find master whitelabel, assuming master is port authority"),
-            MasterAccountId;
-        {'ok', JObj} ->
-            lager:debug("checking master whitelabel port authority if defined"),
-            kzd_whitelabel:port_authority(JObj, MasterAccountId)
-    end;
+    lager:debug("using master account ~s as port authority", [MasterAccountId]),
+    MasterAccountId;
+
 find_port_authority(MasterAccountId, AccountId) ->
-    case kzd_whitelabel:fetch(AccountId) of
-        {'error', _R} ->
-            ParentId = kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId),
-            lager:debug("failed to find whitelabel for ~s, checking parent ~s", [AccountId, ParentId]),
-            find_port_authority(MasterAccountId, ParentId);
-        {'ok', JObj} ->
-            case kzd_whitelabel:port_authority(JObj) of
-                'undefined' ->
-                    ParentId = kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId),
-                    lager:debug("undefined port authority in account ~s, checking parent ~s"
-                               ,[AccountId, ParentId]
-                               ),
-                    find_port_authority(MasterAccountId, ParentId);
-                Id -> Id
-            end
+    case kzd_whitelabel:fetch_port_authority(AccountId, 'undefined') of
+        'undefined' ->
+            case kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId) of
+                AccountId ->
+                    find_port_authority(MasterAccountId, MasterAccountId);
+                ParentId ->
+                    lager:debug("no port authority key found for ~s, checking parent ~s", [AccountId, ParentId]),
+                    find_port_authority(MasterAccountId, ParentId)
+            end;
+        PortAuthority ->
+            lager:debug("using account ~s as port authority", [PortAuthority]),
+            PortAuthority
     end.
