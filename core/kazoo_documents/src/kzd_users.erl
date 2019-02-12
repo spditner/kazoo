@@ -69,7 +69,7 @@
 -export([name/1]).
 -export([is_account_admin/1, is_account_admin/2]).
 -export([classifier_restriction/2, classifier_restriction/3, set_classifier_restriction/3]).
--export([full_name/2, full_name/3])
+-export([full_name/2, full_name/3]).
 
 -include("kz_documents.hrl").
 
@@ -954,7 +954,7 @@ set_classifier_restriction(Doc, Classifier, Action) ->
 full_name(First, Last) ->
     full_name(First, Last, 'undefined').
 
--spec full_name(kz_term:api_binary(), kz_term:api_binary(), | Default) -> kz_term:ne_binary() | Default.
+-spec full_name(kz_term:api_binary(), kz_term:api_binary(), Default) -> kz_term:ne_binary() | Default.
 full_name(?NE_BINARY = First, ?NE_BINARY = Last, _) ->
     <<First/binary, " ", Last/binary>>;
 full_name(_, ?NE_BINARY = Last, _) ->
