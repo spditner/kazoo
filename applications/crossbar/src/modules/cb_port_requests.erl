@@ -1251,7 +1251,7 @@ has_new_comments(Context) ->
     DbDocComments = kz_json:get_list_value(<<"comments">>, DbDoc, []),
     ReqDataComments = kz_json:get_list_value(<<"comments">>, ReqData, []),
     case DbDocComments of
-        [] -> [];
+        [] -> ReqDataComments;
         Comments ->
             OldTime = kz_json:get_integer_value(<<"timestamp">>, lists:last(Comments)),
             [ Comment || Comment <-  ReqDataComments, kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime]

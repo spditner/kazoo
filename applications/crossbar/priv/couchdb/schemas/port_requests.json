@@ -48,6 +48,54 @@
         "comments": {
             "description": "The history of comments made on a port request",
             "items": {
+                "oneOf": [
+                    {
+                        "required": [
+                            "account_id",
+                            "content",
+                            "timestamp",
+                            "user_id"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "author",
+                            "content",
+                            "timestamp"
+                        ]
+                    }
+                ],
+                "properties": {
+                    "account_id": {
+                        "description": "Account ID of the commenter.",
+                        "type": "string"
+                    },
+                    "action_required": {
+                        "default": false,
+                        "description": "Specficied if an action is required by the port request sumbitter.",
+                        "type": "boolean"
+                    },
+                    "author": {
+                        "description": "Full name of the author",
+                        "type": "string"
+                    },
+                    "content": {
+                        "description": "Content of the comment",
+                        "type": "string"
+                    },
+                    "is_private": {
+                        "default": false,
+                        "description": "Specified if this comment is private",
+                        "type": "boolean"
+                    },
+                    "timestamp": {
+                        "type": "integer"
+                    },
+                    "user_id": {
+                        "description": "User ID of the commenter",
+                        "type": "string"
+                    }
+                },
                 "type": "object"
             },
             "type": "array"
