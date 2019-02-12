@@ -22,7 +22,6 @@
         ,post/2, post/4
         ,delete/2, delete/4
         ,acceptable_content_types/0
-        ,validate_request/2
         ]).
 
 -include("crossbar.hrl").
@@ -245,26 +244,44 @@ validate_port_requests(Context, ?HTTP_GET) ->
 validate_port_requests(Context, ?HTTP_PUT) ->
     create(Context).
 
+%%------------------------------------------------------------------------------
+%% @doc Validate operations on port doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, Id) ->
     validate_port_request(Context, Id, cb_context:req_verb(Context)).
 
+-spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
+                                   cb_context:context().
+validate_port_request(Context, Id, ?HTTP_GET) ->
+    read(Context, Id);
+validate_port_request(Context, Id, ?HTTP_POST) ->
+    update(Context, Id);
+validate_port_request(Context, Id, ?HTTP_PATCH) ->
+    ValidateFun = fun (_PortId, C) ->
+                          OnSuccess = fun(InnerC) -> validate_port_comments(InnerC, fun kz_term:identity/1) end,
+                          cb_context:validate_request_data(?SCHEMA, C, OnSuccess)
+                  end,
+    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
+    crossbar_doc:patch_and_validate(Id, Context1, ValidateFun);
+validate_port_request(Context, Id, ?HTTP_DELETE) ->
+    is_deletable(load_port_request(Context, Id)).
+
 -spec validate(cb_context:context(), path_token(), path_token()) ->
                       cb_context:context().
-validate(Context, Id, ?PORT_UNCONFIRMED) ->
-    validate_port_request(Context, Id, ?PORT_UNCONFIRMED, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_SUBMITTED) ->
-    validate_port_request(Context, Id, ?PORT_SUBMITTED, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_PENDING) ->
-    validate_port_request(Context, Id, ?PORT_PENDING, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_SCHEDULED) ->
-    validate_port_request(Context, Id, ?PORT_SCHEDULED, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_COMPLETED) ->
-    validate_port_request(Context, Id, ?PORT_COMPLETED, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_REJECTED) ->
-    validate_port_request(Context, Id, ?PORT_REJECTED, cb_context:req_verb(Context));
-validate(Context, Id, ?PORT_CANCELED) ->
-    validate_port_request(Context, Id, ?PORT_CANCELED, cb_context:req_verb(Context));
+validate(Context, Id, ToState=?PORT_SUBMITTED) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
+validate(Context, Id, ToState=?PORT_PENDING) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
+validate(Context, Id, ToState=?PORT_SCHEDULED) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
+validate(Context, Id, ToState=?PORT_COMPLETED) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
+validate(Context, Id, ToState=?PORT_REJECTED) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
+validate(Context, Id, ToState=?PORT_CANCELED) ->
+    patch_then_validate_then_maybe_transition(Context, Id, ToState);
 validate(Context, Id, ?PORT_ATTACHMENT) ->
     validate_attachments(Context, Id, cb_context:req_verb(Context));
 validate(Context, Id, ?PATH_TOKEN_LOA) ->
@@ -276,12 +293,6 @@ validate(Context, Id, ?PATH_TOKEN_TIMELINE) ->
                       cb_context:context().
 validate(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
     validate_attachment(Context, Id, AttachmentId, cb_context:req_verb(Context)).
-
--spec validate_patch(kz_term:api_binary(), cb_context:context()) -> cb_context:context().
-validate_patch(PortId, Context) ->
-    ValidateFun = fun (_PortId, C) -> cb_context:validate_request_data(?SCHEMA, C) end,
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
-    crossbar_doc:patch_and_validate(PortId, Context1, ValidateFun).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -309,18 +320,6 @@ put(Context, Id, ?PORT_ATTACHMENT) ->
     AName = cb_modules_util:attachment_name(Filename, CT),
     Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
     crossbar_doc:save_attachment(Id, AName, Contents, Context1, Opts).
-
--spec save(cb_context:context()) -> cb_context:context().
-save(Context) ->
-    NewDoc1 = maybe_set_scheduled_date_from_schedule_on(cb_context:doc(Context)),
-    NewDoc = kzd_accounts:set_tree(NewDoc1, kzd_accounts:tree(cb_context:account_doc(Context))),
-    NewerDoc = kz_json:delete_key(<<"reason">>, NewDoc),
-    Context1 = cb_context:setters(Context
-                                 ,[{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
-                                  ,{fun cb_context:set_doc/2, NewerDoc}
-                                  ]
-                                 ),
-    crossbar_doc:save(Context1).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -362,35 +361,93 @@ patch(Context, Id, NewState=?PORT_CANCELED) ->
             cb_context:add_system_error('datastore_fault', Message, Context)
     end.
 
--spec handle_phonebook_error(cb_context:context(), integer(), kz_json:object()) -> cb_context:context().
-handle_phonebook_error(Context, Code, Response) ->
-    Ctx = cb_context:setters(Context, [{fun cb_context:set_resp_error_code/2, Code}
-                                      ,{fun cb_context:set_resp_status/2, 'error'}
-                                      ,{fun cb_context:set_resp_error_msg/2, kz_json:get_ne_binary_value(<<"message">>, Response)}
-                                      ,{fun cb_context:set_validation_errors/2, kz_json:get_value(<<"data">>, Response)}
-                                      ]),
-    Env = cb_context:resp_envelope(Ctx),
-    Env1 = kz_json:set_values([{<<"passthrough">>, true}
-                              ,{<<"error_format">>, <<"phonebook">>}
-                              ], Env),
-    cb_context:set_resp_envelope(Ctx, Env1).
+%%------------------------------------------------------------------------------
+%% @doc If the HTTP verb is POST, execute the actual action, usually a db save
+%% (after a merge perhaps).
+%% @end
+%%------------------------------------------------------------------------------
+-spec post(cb_context:context(), path_token()) -> cb_context:context().
+post(Context, Id) ->
+    save_and_send_comments(Context, Id, get_new_comments(Context)).
 
--spec handle_phonebook_response(cb_context:context(), kz_json:object()) -> cb_context:context().
-handle_phonebook_response(Context, Response) ->
-    Data = kz_json:get_value(<<"data">>, Response, kz_json:new()),
-    Comments = kz_json:get_list_value(<<"comments">>, Data, []),
-    {NewContext, NewData} = maybe_phonebook_comments(Context, Data, Comments),
-    NewDoc = kz_json:merge([cb_context:doc(NewContext), NewData]),
-    cb_context:set_doc(NewContext, NewDoc).
+-spec post(cb_context:context(), path_token(), path_token(), path_token()) -> cb_context:context().
+post(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
+    [{_Filename, FileJObj}] = cb_context:req_files(Context),
+    Contents = kz_json:get_value(<<"contents">>, FileJObj),
+    CT = kz_json:get_value([<<"headers">>, <<"content_type">>], FileJObj),
+    Options = [{'content_type', CT} | ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)],
+    _ = case kz_doc:attachment(cb_context:doc(Context), AttachmentId) of
+            'undefined' -> lager:debug("no attachment named ~s", [AttachmentId]);
+            _AttachmentMeta ->
+                lager:debug("deleting old attachment ~s", [AttachmentId]),
+                kz_datamgr:delete_attachment(cb_context:account_db(Context), Id, AttachmentId)
+        end,
+    crossbar_doc:save_attachment(Id, AttachmentId, Contents, Context, Options).
 
--spec maybe_phonebook_comments(cb_context:context(), kz_json:object(), kz_json:objects()) -> {cb_context:context(), kz_json:object()}.
-maybe_phonebook_comments(Context, Data, []) ->
-    {Context, Data};
-maybe_phonebook_comments(Context, Data, Comments) ->
-    Doc = cb_context:doc(Context),
-    CurrentComments = kz_json:get_value(<<"comments">>, Doc, []),
-    Doc1 = kz_json:set_value(<<"comments">>, CurrentComments ++ Comments, Doc),
-    {cb_context:set_doc(Context, Doc1), kz_json:delete_key(<<"comments">>, Data)}.
+%%------------------------------------------------------------------------------
+%% @doc If the HTTP verb is DELETE, execute the actual action, usually a db delete
+%% @end
+%%------------------------------------------------------------------------------
+-spec delete(cb_context:context(), path_token()) -> cb_context:context().
+delete(Context, _Id) ->
+    case phonebook:maybe_cancel_port_in(Context) of
+        {'ok', _} ->
+            crossbar_doc:delete(Context);
+        {'error', {Code, Response}} ->
+            handle_phonebook_error(Context, Code, Response);
+        {'error', Message} ->
+            cb_context:add_system_error('datastore_fault', Message, Context)
+    end.
+
+-spec delete(cb_context:context(), path_token(), path_token(), path_token()) ->
+                    cb_context:context().
+delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
+    crossbar_doc:delete_attachment(Id, AttachmentName, Context).
+
+%%%=============================================================================
+%%% Save functions
+%%%=============================================================================
+
+-spec save(cb_context:context()) -> cb_context:context().
+save(Context) ->
+    NewDoc1 = maybe_set_scheduled_date_from_schedule_on(cb_context:doc(Context)),
+    NewDoc = kzd_accounts:set_tree(NewDoc1, kzd_accounts:tree(cb_context:account_doc(Context))),
+    NewerDoc = kz_json:delete_key(<<"reason">>, NewDoc),
+    Context1 = cb_context:setters(Context
+                                 ,[{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+                                  ,{fun cb_context:set_doc/2, NewerDoc}
+                                  ]
+                                 ),
+    crossbar_doc:save(Context1).
+
+-spec save_and_send_comments(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> cb_context:context().
+save_and_send_comments(Context, _, []) ->
+    Context1 = save(Context),
+    case cb_context:resp_status(Context1) of
+        'success' ->
+            Doc = cb_context:doc(Context1),
+            cb_context:set_resp_data(Context1, knm_port_request:public_fields(Doc));
+        _ ->
+            Context1
+    end;
+save_and_send_comments(Context, Id, Comments) ->
+    case phonebook:maybe_add_comment(Context, Comments) of
+        {'ok', _} ->
+            Context1 = save(Context),
+            case cb_context:resp_status(Context1) of
+                'success' ->
+                    Doc = cb_context:doc(Context1),
+                    send_port_comment_notifications(Context, Id, Comments),
+                    RespData = filter_private_comments(Context1, knm_port_request:public_fields(Doc)),
+                    cb_context:set_resp_data(Context1, RespData);
+                _ ->
+                    Context1
+            end;
+        {'error', {Code, Response}} ->
+            handle_phonebook_error(Context, Code, Response);
+        {'error', Message} ->
+            cb_context:add_system_error('datastore_fault', Message, Context)
+    end.
 
 -spec save_then_maybe_notify(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) -> cb_context:context().
 save_then_maybe_notify(Context, PortId, NewState) ->
@@ -398,8 +455,9 @@ save_then_maybe_notify(Context, PortId, NewState) ->
     case 'success' =:= cb_context:resp_status(Context1) of
         'false' -> Context1;
         'true' ->
-            RespData1 = knm_port_request:public_fields(cb_context:doc(Context1)),
-            RespData = filter_private_comments(Context1, RespData1),
+            Doc = cb_context:doc(Context1),
+            send_port_comment_notifications(Context1, PortId, get_new_comments(Context1)),
+            RespData = filter_private_comments(Context1, knm_port_request:public_fields(Doc)),
             Context2 = cb_context:set_resp_data(Context1, RespData),
             port_state_change_notify(Context2, PortId, NewState)
     end.
@@ -431,79 +489,39 @@ date_as_configured_timezone(Date, Time, 'undefined') ->
 date_as_configured_timezone(Date, Time, FromTimezone) ->
     kz_time:to_gregorian_seconds({Date, Time}, FromTimezone).
 
-%%------------------------------------------------------------------------------
-%% @doc If the HTTP verb is POST, execute the actual action, usually a db save
-%% (after a merge perhaps).
-%% @end
-%%------------------------------------------------------------------------------
+%%%=============================================================================
+%%% Phonebook functions
+%%%=============================================================================
 
--spec post(cb_context:context(), path_token()) -> cb_context:context().
-post(Context, Id) ->
-    maybe_post_save(Context, Id, has_new_comments(Context)).
+-spec handle_phonebook_error(cb_context:context(), integer(), kz_json:object()) -> cb_context:context().
+handle_phonebook_error(Context, Code, Response) ->
+    Ctx = cb_context:setters(Context, [{fun cb_context:set_resp_error_code/2, Code}
+                                      ,{fun cb_context:set_resp_status/2, 'error'}
+                                      ,{fun cb_context:set_resp_error_msg/2, kz_json:get_ne_binary_value(<<"message">>, Response)}
+                                      ,{fun cb_context:set_validation_errors/2, kz_json:get_value(<<"data">>, Response)}
+                                      ]),
+    Env = cb_context:resp_envelope(Ctx),
+    Env1 = kz_json:set_values([{<<"passthrough">>, true}
+                              ,{<<"error_format">>, <<"phonebook">>}
+                              ], Env),
+    cb_context:set_resp_envelope(Ctx, Env1).
 
--spec maybe_post_save(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> cb_context:context().
-maybe_post_save(Context, _, []) ->
-    Context1 = save(Context),
-    case cb_context:resp_status(Context1) of
-        'success' ->
-            Doc = cb_context:doc(Context1),
-            cb_context:set_resp_data(Context1, knm_port_request:public_fields(Doc));
-        _ ->
-            Context1
-    end;
-maybe_post_save(Context, Id, Comments) ->
-    case phonebook:maybe_add_comment(Context, Comments) of
-        {'ok', _} ->
-            Context1 = save(Context),
-            case cb_context:resp_status(Context1) of
-                'success' ->
-                    Doc = cb_context:doc(Context1),
-                    send_port_comment_notifications(Context, Id, Comments),
-                    RespData = filter_private_comments(Context1, knm_port_request:public_fields(Doc)),
-                    cb_context:set_resp_data(Context1, RespData);
-                _ ->
-                    Context1
-            end;
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
-    end.
+-spec handle_phonebook_response(cb_context:context(), kz_json:object()) -> cb_context:context().
+handle_phonebook_response(Context, Response) ->
+    Data = kz_json:get_value(<<"data">>, Response, kz_json:new()),
+    Comments = kz_json:get_list_value(<<"comments">>, Data, []),
+    {NewContext, NewData} = maybe_phonebook_comments(Context, Data, Comments),
+    NewDoc = kz_json:merge([cb_context:doc(NewContext), NewData]),
+    cb_context:set_doc(NewContext, NewDoc).
 
--spec post(cb_context:context(), path_token(), path_token(), path_token()) -> cb_context:context().
-post(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
-    [{_Filename, FileJObj}] = cb_context:req_files(Context),
-    Contents = kz_json:get_value(<<"contents">>, FileJObj),
-    CT = kz_json:get_value([<<"headers">>, <<"content_type">>], FileJObj),
-    Options = [{'content_type', CT} | ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)],
-    _ = case kz_doc:attachment(cb_context:doc(Context), AttachmentId) of
-            'undefined' -> lager:debug("no attachment named ~s", [AttachmentId]);
-            _AttachmentMeta ->
-                lager:debug("deleting old attachment ~s", [AttachmentId]),
-                kz_datamgr:delete_attachment(cb_context:account_db(Context), Id, AttachmentId)
-        end,
-    crossbar_doc:save_attachment(Id, AttachmentId, Contents, Context, Options).
-
-%%------------------------------------------------------------------------------
-%% @doc If the HTTP verb is DELETE, execute the actual action, usually a db delete
-%% @end
-%%------------------------------------------------------------------------------
-
--spec delete(cb_context:context(), path_token()) -> cb_context:context().
-delete(Context, _Id) ->
-    case phonebook:maybe_cancel_port_in(Context) of
-        {'ok', _} ->
-            crossbar_doc:delete(Context);
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
-    end.
-
--spec delete(cb_context:context(), path_token(), path_token(), path_token()) ->
-                    cb_context:context().
-delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
-    crossbar_doc:delete_attachment(Id, AttachmentName, Context).
+-spec maybe_phonebook_comments(cb_context:context(), kz_json:object(), kz_json:objects()) -> {cb_context:context(), kz_json:object()}.
+maybe_phonebook_comments(Context, Data, []) ->
+    {Context, Data};
+maybe_phonebook_comments(Context, Data, Comments) ->
+    Doc = cb_context:doc(Context),
+    CurrentComments = kz_json:get_value(<<"comments">>, Doc, []),
+    Doc1 = kz_json:set_value(<<"comments">>, CurrentComments ++ Comments, Doc),
+    {cb_context:set_doc(Context, Doc1), kz_json:delete_key(<<"comments">>, Data)}.
 
 %%%=============================================================================
 %%% Internal functions
@@ -518,54 +536,82 @@ load_port_request(Context, Id) ->
     Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
     crossbar_doc:load(Id, Context1, ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)).
 
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
-                                   cb_context:context().
-validate_port_request(Context, Id, ?HTTP_GET) ->
-    read(Context, Id);
-validate_port_request(Context, Id, ?HTTP_POST) ->
-    update(Context, Id);
-validate_port_request(Context, Id, ?HTTP_PATCH) ->
-    validate_patch(Id, Context);
-validate_port_request(Context, Id, ?HTTP_DELETE) ->
-    is_deletable(load_port_request(Context, Id)).
-
--spec validate_port_request(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary(), http_method()) ->
-                                   cb_context:context().
-validate_port_request(Context, Id, ToState=?PORT_SUBMITTED, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState);
-validate_port_request(Context, Id, ToState=?PORT_PENDING, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState);
-validate_port_request(Context, Id, ToState=?PORT_SCHEDULED, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState);
-validate_port_request(Context, Id, ToState=?PORT_COMPLETED, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState);
-validate_port_request(Context, Id, ToState=?PORT_REJECTED, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState);
-validate_port_request(Context, Id, ToState=?PORT_CANCELED, ?HTTP_PATCH) ->
-    patch_then_validate_then_maybe_transition(Context, Id, ToState).
-
 -spec patch_then_validate_then_maybe_transition(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) ->
                                                        cb_context:context().
 patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
+    OnSuccess = fun(C) ->
+                        validate_port_comments(C, fun(OtherC) -> maybe_move_state(OtherC, ToState) end)
+                end,
     ValidateFun = fun (_PortId, C) ->
-                          OnSuccess = fun (OtherC) -> maybe_move_state(OtherC, ToState) end,
                           cb_context:validate_request_data(?SCHEMA, C, OnSuccess)
                   end,
     Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
     LoadOptions = ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST),
     crossbar_doc:patch_and_validate(PortId, Context1, ValidateFun, LoadOptions).
 
--spec validate_request(kz_term:api_binary(), cb_context:context()) -> cb_context:context().
-validate_request(_PortId, Context) -> Context.
+%%%=============================================================================
+%%% Internal Validate functions
+%%%=============================================================================
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
+-spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
+                                    cb_context:context().
+validate_port_comments(Context, OnSuccess) ->
+    case get_new_comments(Context) of
+        [] ->
+            successful_comments_validation(Context, OnSuccess);
+        NewComments ->
+            IsPortAuthority = cb_context:fetch(Context, 'is_port_authority'),
+            validate_port_comments(Context, OnSuccess, NewComments, IsPortAuthority)
+    end.
+
+-spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:objects(), boolean()) ->
+                                    cb_context:context().
+validate_port_comments(Context, OnSuccess, NewComments, 'false') ->
+    Filters = [{[<<"action_required">>], fun kz_term:is_true/1}
+              ,{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
+              ,{[<<"is_private">>], fun kz_term:is_true/1}
+              ],
+    case run_comment_filter(NewComments, Filters) of
+        [] ->
+            successful_comments_validation(Context, OnSuccess);
+        [_|_] ->
+            Msg = kz_json:from_list(
+                    [{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
+                    ,{<<"cause">>, <<"comments">>}
+                    ]),
+            cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
+    end;
+validate_port_comments(Context, OnSuccess, NewComments, 'true') ->
+    Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
+              ,{[<<"is_private">>], fun kz_term:is_true/1}
+              ],
+    case [Comment
+          || Comment <- run_comment_filter(NewComments, Filters),
+             kz_json:is_true(<<"action_required">>, Comment, 'false')
+         ]
+    of
+        [] ->
+            successful_comments_validation(Context, OnSuccess);
+        [_|_] ->
+            Msg = kz_json:from_list(
+                    [{<<"message">>, <<"you're not allowed to action_required a private comment">>}
+                    ,{<<"cause">>, <<"comments">>}
+                    ]),
+            cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
+    end.
+
+-spec successful_comments_validation(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
+                                            cb_context:context().
+successful_comments_validation(Context, OnSuccess) ->
+    Doc = cb_context:doc(Context),
+    Comments = kz_json:get_list_value(<<"comments">>, Doc, []),
+    NewDoc = kz_json:set_value(<<"comments">>, lists:sort(fun sort_comments_by_timestamp/2, Comments), Doc),
+    OnSuccess(cb_context:set_doc(Context, NewDoc)).
+
 -spec validate_attachments(cb_context:context(), kz_term:ne_binary(), http_method()) ->
                                   cb_context:context().
 validate_attachments(Context, Id, ?HTTP_GET) ->
@@ -884,18 +930,27 @@ maybe_prepare_timeline(Context) ->
 
 -spec filter_private_comments(cb_context:context(), kz_json:object()) -> kz_json:object().
 filter_private_comments(Context, JObj) ->
-    case cb_context:is_superduper_admin(Context) of
-        'false' -> run_comment_filter(JObj);
+    Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
+              ,{[<<"is_private">>], fun kz_term:is_true/1}
+              ],
+    case cb_context:fetch(Context, 'is_port_authority') of
+        'false' ->
+            Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
+            kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj);
         'true'  -> JObj
     end.
 
--spec run_comment_filter(kz_json:object()) -> kz_json:object().
-run_comment_filter(JObj) ->
-    Filtered = [Comment
-                || Comment <- kz_json:get_list_value(<<"comments">>, JObj, []),
-                   not kz_json:is_true(<<"superduper_comment">>, Comment)
-               ],
-    kz_json:set_value(<<"comments">>, Filtered, JObj).
+-spec run_comment_filter(kz_json:object(), [{kz_json:path(), fun((any()) -> boolean())}]) ->
+                                kz_json:object().
+run_comment_filter(Comments, Filters) ->
+    [Comment
+     || Comment <- Comments,
+        lists:any(fun({Key, Filter}) ->
+                          Filter(kz_json:get_value(Key, Comment))
+                  end
+                 ,Filters
+                 )
+    ].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -959,7 +1014,7 @@ on_successful_validation(Context, Id, 'true') ->
     case cb_context:resp_status(Context1) of
         'success' ->
             lager:debug("number(s) checked out for ~s", [Id]),
-            successful_validation(Context, Id);
+            validate_port_comments(Context, fun(C) -> successful_validation(C, Id) end);
         _ -> Context1
     end;
 on_successful_validation(Context, _Id, 'false') ->
@@ -1219,43 +1274,64 @@ port_state_change_notify(Context, Id, State, Fun) ->
         Context
     catch
         _E:_R ->
-            kz_util:log_stacktrace(),
-            lager:debug("failed to send the  port ~s notification: ~s:~p", [State, _E, _R]),
-            _ = revert_patch(Context),
-            Msg = kz_json:from_list(
-                    [{<<"message">>, <<"failed to send port ", State/binary, " email">>}
-                    ]),
-            cb_context:add_system_error('bad_gateway', Msg, Context)
+            lager:debug("failed to send the  port ~s notification, maybe reverting the state change: ~s:~p"
+                       ,[State, _E, _R]
+                       ),
+            maybe_revert_patch(Context, is_managed_by_phonebook(Context))
     end.
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec revert_patch(cb_context:context()) -> cb_context:context().
-revert_patch(Context) ->
+-spec is_managed_by_phonebook(cb_context:context()) -> boolean().
+is_managed_by_phonebook(Context) ->
+    MasterId = case kapps_util:get_master_account_id() of
+                   {'ok', Id} -> Id;
+                   {'error', _} ->
+                       cb_context:fetch(Context, 'port_authority_id')
+               end,
+    phonebook:phonebook_enabled()
+        andalso cb_context:fetch(Context, 'port_authority_id') =:= MasterId
+        andalso not phonebook:req_from_phonebook(Context).
+
+-spec maybe_revert_patch(cb_context:context(), boolean()) -> cb_context:context().
+maybe_revert_patch(Context, 'true') ->
+    lager:debug("port is managed by phonebook, can not reverting"),
+    Context;
+maybe_revert_patch(Context, 'false') ->
+    lager:debug("port is not managed by phonebook, reverting"),
     Doc = cb_context:doc(Context),
     DBDoc = cb_context:fetch(Context, 'db_doc'),
     Rev = kz_doc:revision(Doc),
     RevertedDoc = kz_doc:set_revision(DBDoc, Rev),
-    crossbar_doc:save(cb_context:set_doc(Context, RevertedDoc)).
+    _ = crossbar_doc:save(cb_context:set_doc(Context, RevertedDoc)),
+    Msg = kz_json:from_list(
+            [{<<"message">>, <<"failed to send port state change email notification">>}
+            ]),
+    cb_context:add_system_error('bad_gateway', Msg, Context).
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec has_new_comments(cb_context:context()) -> kz_json:objects().
-has_new_comments(Context) ->
-    DbDoc = cb_context:fetch(Context, 'db_doc'),
+-spec get_new_comments(cb_context:context()) -> kz_json:objects().
+get_new_comments(Context) ->
     ReqData = cb_context:req_data(Context),
-    DbDocComments = kz_json:get_list_value(<<"comments">>, DbDoc, []),
-    ReqDataComments = kz_json:get_list_value(<<"comments">>, ReqData, []),
-    case DbDocComments of
-        [] -> ReqDataComments;
+    Sort = fun(Cs) -> lists:sort(fun sort_comments_by_timestamp/2, Cs) end,
+    ReqComments = Sort(kz_json:get_list_value(<<"comments">>, ReqData, [])),
+    case Sort(kz_json:get_list_value(<<"comments">>, cb_context:fetch(Context, 'db_doc'), [])) of
+        [] -> ReqComments;
         Comments ->
             OldTime = kz_json:get_integer_value(<<"timestamp">>, lists:last(Comments)),
-            [ Comment || Comment <-  ReqDataComments, kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime]
+            [Comment || Comment <-  ReqComments,
+                        kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime
+            ]
     end.
+
+-spec sort_comments_by_timestamp(kz_json:object(), kz_json:object()) -> boolean().
+sort_comments_by_timestamp(CommentA, CommentB) ->
+    kz_json:get_integer_value(<<"timestamp">>, CommentA) =< kz_json:get_integer_value(<<"timestamp">>, CommentB).
 
 send_port_comment_notifications(Context, Id, Comments) ->
     _ = lists:foldl(fun send_port_comment_notification/2, {Context, Id, length(Comments), 0}, Comments),

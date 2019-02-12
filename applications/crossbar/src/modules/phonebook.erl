@@ -9,6 +9,8 @@
 -export([maybe_create_port_in/1
         ,maybe_add_comment/2
         ,maybe_cancel_port_in/1
+        ,phonebook_enabled/0
+        ,req_from_phonebook/1
         ]).
 
 -include("crossbar.hrl").
