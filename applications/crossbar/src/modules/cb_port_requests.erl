@@ -1250,27 +1250,18 @@ find_template(ResellerId, CarrierName) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec port_state_change_notify(cb_context:context(), path_token(), path_token()) -> cb_context:context().
-port_state_change_notify(Context, Id, ?PORT_UNCONFIRMED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_unconfirmed_notification/2);
-port_state_change_notify(Context, Id, ?PORT_SUBMITTED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_request_notification/2);
-port_state_change_notify(Context, Id, ?PORT_PENDING=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_pending_notification/2);
-port_state_change_notify(Context, Id, ?PORT_SCHEDULED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_scheduled_notification/2);
-port_state_change_notify(Context, Id, ?PORT_COMPLETED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_ported_notification/2);
-port_state_change_notify(Context, Id, ?PORT_REJECTED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_rejected_notification/2);
-port_state_change_notify(Context, Id, ?PORT_CANCELED=State) ->
-    port_state_change_notify(Context, Id, State, fun send_port_cancel_notification/2).
-
--spec port_state_change_notify(cb_context:context(), path_token(), path_token(), function()) ->
-                                      cb_context:context().
-port_state_change_notify(Context, Id, State, Fun) ->
+port_state_change_notify(Context, Id, State) ->
+    Req = props:filter_undefined(
+            [{<<"Account-ID">>, cb_context:account_id(Context)}
+            ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
+            ,{<<"Port-Request-ID">>, Id}
+            ,{<<"Reason">>, state_change_reason_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))}
+            ,{<<"Version">>, cb_context:api_version(Context)}
+            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+            ]),
     try
-        Fun(Context, Id),
-        lager:debug("port ~s notification sent for ~s", [State, Id]),
+        lager:debug("sending port ~s notification for port request ~s", [State, Id]),
+        kapps_notify_publisher:cast(Req, state_change_notify_fun(State)),
         Context
     catch
         _E:_R ->
@@ -1279,6 +1270,30 @@ port_state_change_notify(Context, Id, State, Fun) ->
                        ),
             maybe_revert_patch(Context, is_managed_by_phonebook(Context))
     end.
+
+-spec state_change_notify_fun(kz_term:ne_binary()) -> function().
+state_change_notify_fun(?PORT_SUBMITTED) ->
+    fun kapi_notifications:publish_port_request/1;
+state_change_notify_fun(?PORT_PENDING) ->
+    fun kapi_notifications:publish_port_pending/1;
+state_change_notify_fun(?PORT_SCHEDULED) ->
+    fun kapi_notifications:publish_port_scheduled/1;
+state_change_notify_fun(?PORT_COMPLETED) ->
+    fun kapi_notifications:publish_ported/1;
+state_change_notify_fun(?PORT_REJECTED) ->
+    fun kapi_notifications:publish_port_rejected/1;
+state_change_notify_fun(?PORT_CANCELED) ->
+    fun kapi_notifications:publish_port_cancel/1.
+
+-spec state_change_reason_props(cb_context:context(), kz_term:api_ne_binary()) -> kz_term:api_proplist().
+state_change_reason_props(Context, ?NE_BINARY=Reason) ->
+    [{<<"user_id">>, cb_context:auth_user_id(Context)}
+    ,{<<"account_id">>, cb_context:auth_account_id(Context)}
+    ,{<<"timestamp">>, kz_doc:modified(cb_context:doc(Context))}
+    ,{<<"content">>, Reason}
+    ];
+state_change_reason_props(_, _) ->
+    'undefined'.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -1361,111 +1376,6 @@ send_port_comment_notification(NewComment, {Context, Id, TotalNew, Index}) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec send_port_unconfirmed_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_unconfirmed_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_unconfirmed/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_port_request_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_request_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-          ,{<<"Version">>, cb_context:api_version(Context)}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_request/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_port_pending_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_pending_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_pending/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_port_rejected_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_rejected_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_rejected/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_port_cancel_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_cancel_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_cancel/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_ported_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_ported_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_ported/1).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec send_port_scheduled_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_scheduled_notification(Context, Id) ->
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, Id}
-           | common_patch_notification_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))
-          ],
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_scheduled/1).
-
--spec common_patch_notification_props(cb_context:context(), kz_term:api_ne_binary()) -> kz_term:proplist().
-common_patch_notification_props(Context, ?NE_BINARY=Reason) ->
-    Props = [{<<"user_id">>, cb_context:auth_user_id(Context)}
-            ,{<<"account_id">>, cb_context:auth_account_id(Context)}
-            ,{<<"timestamp">>, kz_doc:modified(cb_context:doc(Context))}
-            ,{<<"content">>, Reason}
-            ],
-    [{<<"Reason">>, kz_json:from_list(Props)}
-     | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-    ];
-common_patch_notification_props(_, _) ->
-    kz_api:default_headers(?APP_NAME, ?APP_VERSION).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
 -spec generate_loa_from_port(cb_context:context(), kz_json:object()) ->
                                     cb_context:context().
 generate_loa_from_port(Context, PortRequest) ->
@@ -1510,6 +1420,10 @@ create_QR_code(AccountId, PortRequestId) ->
             'undefined'
     end.
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
     AccountId = authority_type(Context, cb_context:req_nouns(Context)),
