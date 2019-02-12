@@ -332,8 +332,11 @@ find_port_authority(Doc) ->
             'undefined'
     end.
 
--spec find_port_authority(kz_term:ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_binary().
-find_port_authority(?NE_BINARY = MasterAccountId, 'undefined') ->
+-spec find_port_authority(kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_binary().
+find_port_authority('undefined', 'undefined') ->
+    lager:debug("master and account id is undefined"),
+    'undefined';
+find_port_authority(MasterAccountId, 'undefined') ->
     lager:debug("account id is undefined, checking master"),
     find_port_authority(MasterAccountId, MasterAccountId);
 find_port_authority(MasterAccountId, MasterAccountId) ->

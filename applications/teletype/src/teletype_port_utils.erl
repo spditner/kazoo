@@ -300,20 +300,12 @@ maybe_add_user_data(DataJObj, Author, 'false') ->
         {'error', _} ->
             [{<<"author">>, Author}];
         {'ok', UserDoc} ->
-            [{<<"author">>, first_last_name(kzd_users:first_name(UserDoc), kzd_users:last_name(UserDoc))}
+            [{<<"author">>
+             ,kzd_users:first_last_name(kzd_users:first_name(UserDoc), kzd_users:last_name(UserDoc), <<"An agent">>)
+             }
              | teletype_util:user_params(UserDoc)
             ]
     end.
-
--spec first_last_name(kz_term:api_binary(), kz_term:api_binary()) -> kz_term:ne_binary().
-first_last_name(?NE_BINARY = First, ?NE_BINARY = Last) ->
-    <<First/binary, " ", Last/binary>>;
-first_last_name(_, ?NE_BINARY = Last) ->
-    <<Last/binary>>;
-first_last_name(?NE_BINARY = First, _) ->
-    <<First/binary>>;
-first_last_name(_, _) ->
-    <<"An agent">>.
 
 -spec is_attachable_template(kz_term:ne_binary()) -> boolean().
 is_attachable_template(TemplateId) ->
