@@ -9,7 +9,7 @@
 -export([current_state/1
         ,public_fields/1
         ,get/1
-        ,new/3
+        ,new/4
         ,account_active_ports/1
         ,descendant_active_ports/1
         ,account_has_active_port/1
@@ -196,13 +196,16 @@ normalize_numbers(PortReq) ->
 normalize_number_map(N, Meta) ->
     {knm_converters:normalize(N), Meta}.
 
--spec new(kz_json:object(), kz_term:ne_binary(), kz_term:api_ne_binary()) -> kz_json:object().
-new(PortReq, ?MATCH_ACCOUNT_RAW(AuthAccountId), AuthUserId) ->
+-spec new(kz_json:object(), kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_json:object().
+new(PortReq, ?MATCH_ACCOUNT_RAW(AuthAccountId), AuthUserId, PortAuthorityId) ->
     Normalized = normalize_numbers(PortReq),
-    Metadata = transition_metadata(AuthAccountId, AuthUserId),
+    #{auth_account_name := AuthAccountName
+     } = Metadata = transition_metadata(AuthAccountId, AuthUserId),
     Unconf = [{?PORT_PVT_TYPE, ?TYPE_PORT_REQUEST}
              ,{?PORT_PVT_STATE, ?PORT_UNCONFIRMED}
              ,{?PORT_PVT_TRANSITIONS, [transition_metadata_jobj(undefined, ?PORT_UNCONFIRMED, Metadata)]}
+             ,{<<"pvt_account_name">>, AuthAccountName}
+             ,{<<"pvt_port_authority">>, PortAuthorityId}
              ],
     kz_json:set_values(Unconf, Normalized).
 
@@ -337,6 +340,7 @@ maybe_user(UserId, OptionalFirstName, OptionalLastName) ->
                                 ,auth_user_id => kz_term:api_ne_binary()
                                 ,user_first_name => kz_term:api_ne_binary()
                                 ,user_last_name => kz_term:api_ne_binary()
+                                ,user_full_name => kz_term:api_ne_binary()
                                 ,optional_reason => kz_term:api_ne_binary()
                                 }.
 
@@ -360,9 +364,11 @@ transition_metadata(?MATCH_ACCOUNT_RAW(AuthAccountId), UserId, Reason) ->
      ,auth_user_id => OptionalUserId
      ,user_first_name => FirstName
      ,user_last_name => LastName
+     ,user_full_name => kzd_users:full_name(FirstName, LastName)
      ,optional_reason => OptionalReason
      }.
 
+-spec get_user_name(kz_term:ne_binary(), kz_term:api_ne_binary()) -> {kz_term:api_ne_binary(), kz_term:api_ne_binary()}.
 get_user_name(AuthAccountId, UserId) ->
     case kzd_users:fetch(AuthAccountId, UserId) of
         {ok, UserJObj} -> {kzd_users:first_name(UserJObj), kzd_users:last_name(UserJObj)};

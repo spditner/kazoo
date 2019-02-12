@@ -998,8 +998,11 @@ can_update_port_request(Context, _State) ->
 -spec successful_validation(cb_context:context(), kz_term:api_binary()) -> cb_context:context().
 successful_validation(Context, 'undefined') ->
     PortReq = knm_port_request:new(cb_context:doc(Context)
-                                  ,cb_context:auth_account_id(Context)
-                                  ,cb_context:auth_user_id(Context)
+                                  ,[{'auth_by', cb_context:auth_account_id(Context)}
+                                   ,{'auth_user_id', cb_context:auth_user_id(Context)}
+                                   ,{'port_authority_id', cb_context:fetch(Context, 'port_authority_id')}
+                                   ,{'account_name', cb_context:account_name(Context)}
+                                   ]
                                   ),
     cb_context:set_doc(Context, PortReq);
 successful_validation(Context, _Id) ->
