@@ -636,7 +636,6 @@ validate_attachment(Context, Id, AttachmentId, ?HTTP_DELETE) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
-
 -spec is_deletable(cb_context:context()) -> cb_context:context().
 is_deletable(Context) ->
     is_deletable(Context, knm_port_request:current_state(cb_context:doc(Context))).
@@ -803,7 +802,8 @@ by_types_view_options(Context, Type, 'false', 'false') ->
 -spec type_summarize_view_name(req_nouns()) -> kz_term:ne_binary().
 type_summarize_view_name([{<<"port_requests">>, _}]) ->
     ?AGENT_LISTING_BY_STATE;
-type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, ?DESCENDANTS} | _]) ->
+type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, [_, ?DESCENDANTS]} | _]) ->
+    ?DEV_LOG("vooli vooli voollla"),
     ?DESCENDANT_LISTING_BY_STATE;
 type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
     ?LISTING_BY_STATE.
@@ -1426,11 +1426,43 @@ create_QR_code(AccountId, PortRequestId) ->
 %%------------------------------------------------------------------------------
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
-    AccountId = authority_type(Context, cb_context:req_nouns(Context)),
+    set_port_authority(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)).
+
+-spec set_port_authority(cb_context:context(), req_nouns(), req_verb()) -> kz_term:ne_binary().
+set_port_authority(Context, [{<<"port_requests">>, _}], _) ->
+    set_port_authority(Context, cb_context:auth_account_id(Context));
+set_port_authority(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [AccountId]} | _], _) ->
+    case cb_context:auth_account_id(Context) of
+        AccountId ->
+            %% port authority of the authenticated account is always port authority of upper account
+            ParentId = kzd_accounts:get_parent_account_id(cb_context:account_id(Context)),
+            set_port_authority(Context, ParentId);
+        _ ->
+            set_port_authority(Context, cb_context:account_id(Context))
+    end;
+set_port_authority(Context, [{<<"port_requests">>, _}, {<<"accounts">>, Accounts} | _], Method) ->
+    case lists:member(?DESCENDANTS, Accounts)
+         andalso lists:member(Method, [?HTTP_POST, ?HTTP_PATCH])
+    of
+        'true' ->
+            %% paranoia
+            NewNouns = props:set_value(<<"accounts">>, [cb_context:account_id(Context)]),
+            set_port_authority(Context, NewNouns, Method);
+        'false' ->
+            set_port_authority(Context, cb_context:account_id(Context))
+    end.
+
+-spec set_port_authority(cb_context:context(), kz_term:api_ne_binary()) -> cb_context:context().
+set_port_authority(Context, AccountId) ->
     case kzd_port_requests:find_port_authority(AccountId) of
         'undefined' ->
-            lager:warning("can not find port authority, but allowing the request anyway"),
-            Context;
+            lager:warning("set undefined port authority to master"),
+            {'ok', MasterId} = kapps_util:get_master_account_id(),
+            AuthAccountId = cb_context:auth_account_id(Context),
+            Setters = [{fun cb_context:store/3, 'port_authority_id', MasterId}
+                      ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= MasterId}
+                      ],
+            cb_context:setters(Context, Setters);
         PortAuthority ->
             AuthAccountId = cb_context:auth_account_id(Context),
             Setters = [{fun cb_context:store/3, 'port_authority_id', PortAuthority}
@@ -1438,9 +1470,3 @@ set_port_authority(Context) ->
                       ],
             cb_context:setters(Context, Setters)
     end.
-
--spec authority_type(cb_context:context(), req_nouns()) -> kz_term:ne_binary().
-authority_type(Context, [{<<"port_requests">>, _}]) ->
-    cb_context:auth_account_id(Context);
-authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
-    cb_context:account_id(Context).

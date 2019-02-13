@@ -31,7 +31,8 @@ port_request_data(DataJObj, TemplateId) ->
 
 -spec port_request_data(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
 port_request_data(DataJObj, TemplateId, PortReqJObj) ->
-    Routines = [fun fix_numbers/3
+    Routines = [fun fix_port_authority/3
+               ,fun fix_numbers/3
                ,fun fix_billing/3
                ,fun fix_reference_number/3
                ,fun fix_port_state/3
@@ -50,6 +51,47 @@ port_request_data(DataJObj, TemplateId, PortReqJObj) ->
                       ),
     NewData = kz_json:set_value(<<"port_request">>, JObj, DataJObj),
     maybe_add_attachments(maybe_fix_emails(NewData, TemplateId), TemplateId).
+
+-spec fix_port_authority(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
+fix_port_authority(_DataJObj, _TemplateId, PortReqJObj) ->
+    {'ok', MasterId} = kapps_util:get_master_account_id(),
+    case find_port_authority(PortReqJObj, MasterId) of
+        'undefined' ->
+            lager:debug("port authority is undefined, using master as port authority"),
+            kz_json:set_value(<<"port_authority">>
+                             ,kz_json:from_list(teletype_util:find_account_params(MasterId))
+                             ,PortReqJObj
+                             );
+        PortAuthority ->
+            kz_json:set_value(<<"port_authority">>
+                             ,kz_json:from_list(teletype_util:find_account_params(PortAuthority))
+                             ,PortReqJObj
+                             )
+    end.
+
+-spec find_port_authority(kz_json:object(), kz_term:ne_binary()) -> kz_term:api_ne_binary().
+find_port_authority(PortReqJObj, MasterId) ->
+    SubmittedAccountId = kz_doc:account_id(PortReqJObj),
+    case kzd_port_requests:find_port_authority(PortReqJObj) of
+        'undefined' -> MasterId;
+        MasterId -> MasterId;
+        SubmittedAccountId ->
+            lager:debug("port authority is same as submitted account ~s, getting port authority for parent account"
+                       ,[SubmittedAccountId]
+                       ),
+            case kzd_accounts:get_parent_account_id(SubmittedAccountId) of
+                'undefined' ->
+                    lager:debug("parent account id is undefined, using master account"),
+                    MasterId;
+                SubmittedAccountId ->
+                    lager:debug("parenting loop"),
+                    SubmittedAccountId;
+                ParentId ->
+                    lager:debug("parent id ~p", [ParentId]),
+                    kzd_port_requests:find_port_authority(ParentId)
+            end;
+        PortAuthority -> PortAuthority
+    end.
 
 -spec fix_numbers(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
 fix_numbers(_DataJObj, _TemplateId, PortReqJObj) ->
@@ -428,7 +470,7 @@ maybe_get_port_authority(DataJObj, TemplateId, 'true') ->
 -spec get_authority_emails(kz_json:object(), kz_term:ne_binary()) -> kz_term:api_binaries().
 get_authority_emails(DataJObj, TemplateId) ->
     PortDoc = kz_json:get_json_value(<<"port_request">>, DataJObj),
-    case kzd_port_requests:find_port_authority(PortDoc) of
+    case kz_json:get_ne_binary_value([<<"port_authority">>, <<"id">>], PortDoc) of
         'undefined' ->
             lager:debug("using master as port authority"),
             maybe_use_master_admins(TemplateId, 'undefined');

@@ -307,7 +307,7 @@ port_authority(Doc, Default) ->
 set_port_authority(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_authority">>], PortAuthority, Doc).
 
--spec find_port_authority(doc() | kz_term:ne_binary()) -> kz_term:api_ne_binary().
+-spec find_port_authority(doc() | kz_term:api_ne_binary()) -> kz_term:api_ne_binary().
 find_port_authority(?NE_BINARY = AccountId) ->
     case kapps_util:get_master_account_id() of
         {'ok', MasterAccountId} ->
