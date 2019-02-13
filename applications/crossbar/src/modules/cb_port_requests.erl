@@ -411,6 +411,10 @@ delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
 %%% Save functions
 %%%=============================================================================
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec save(cb_context:context()) -> cb_context:context().
 save(Context) ->
     NewDoc1 = maybe_set_scheduled_date_from_schedule_on(cb_context:doc(Context)),
@@ -496,6 +500,10 @@ date_as_configured_timezone(Date, Time, FromTimezone) ->
 %%% Phonebook functions
 %%%=============================================================================
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec handle_phonebook_error(cb_context:context(), integer(), kz_json:object()) -> cb_context:context().
 handle_phonebook_error(Context, Code, Response) ->
     Ctx = cb_context:setters(Context, [{fun cb_context:set_resp_error_code/2, Code}
@@ -708,6 +716,10 @@ summary(Context) ->
 %%% Summary by Types functions
 %%%=============================================================================
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec summarize_by_types(cb_context:context()) -> cb_context:context().
 summarize_by_types(Context) ->
     case cb_context:req_value(Context, <<"by_types">>) of
