@@ -877,7 +877,7 @@ normalize_number_summarize_results(Context, JObj, Acc) ->
     case lists:member(cb_context:auth_account_id(Context)
                      ,kzd_accounts:tree(JObj)
                      )
-         orelse cb_context:is_superduper_admin(Context)
+        orelse cb_context:is_superduper_admin(Context)
     of
         'true' -> normalize_view_results(JObj, Acc);
         'false' -> Acc
@@ -948,7 +948,7 @@ filter_private_comments(Context, JObj) ->
               ,{[<<"is_private">>], fun kz_term:is_false/1}
               ],
     case kzd_port_requests:port_authority(JObj) =:= cb_context:auth_account_id(Context)
-         orelse cb_context:fetch(Context, 'is_port_authority')
+        orelse cb_context:fetch(Context, 'is_port_authority')
     of
         'false' ->
             Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
@@ -1274,7 +1274,7 @@ port_state_change_notify(Context, Id, State) ->
             ,{<<"Port-Request-ID">>, Id}
             ,{<<"Reason">>, state_change_reason_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))}
             ,{<<"Version">>, cb_context:api_version(Context)}
-            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+             | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
             ]),
     try
         lager:debug("sending port ~s notification for port request ~s", [State, Id]),
