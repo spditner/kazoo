@@ -20,6 +20,13 @@ Key | Description | Type | Default | Required | Support Level
 `bill.street_number` | The street number of the billing address the losing carrier has on record | `string()` |   | `false` |  
 `bill.street_type` | The street type of the billing address the losing carrier has on record | `string()` |   | `false` |  
 `bill` | Billing information of the losing carrier | `object()` |   | `false` |  
+`comments.[].account_id` | Account ID of the commenter. | `string()` |   | `false` |  
+`comments.[].action_required` | Specficied if an action is required by the port request sumbitter. | `boolean()` | `false` | `false` |  
+`comments.[].author` | Full name of the author | `string()` |   | `false` |  
+`comments.[].content` | Content of the comment | `string()` |   | `false` |  
+`comments.[].is_private` | Specified if this comment is private | `boolean()` | `false` | `false` |  
+`comments.[].timestamp` |   | `integer()` |   | `false` |  
+`comments.[].user_id` | User ID of the commenter | `string()` |   | `false` |  
 `comments` | The history of comments made on a port request | `array(object())` |   | `false` |  
 `name` | A friendly name for the port request | `string(1..128)` |   | `true` |  
 `notifications.email.send_to` | A list or string of email recipient(s) | `string() | array(string())` |   | `false` |  
@@ -92,76 +99,6 @@ curl -v -X PATCH \
 curl -v -X DELETE \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/unconfirmed
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/unconfirmed
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/canceled
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/canceled
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/rejected
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/rejected
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/completed
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/completed
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/scheduled
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/scheduled
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/pending
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/pending
-```
-
-## Fetch
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/submitted
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/submitted
 ```
 
 ## Fetch

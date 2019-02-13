@@ -18079,6 +18079,9 @@
                 },
                 "To": {
                     "type": "string"
+                },
+                "Version": {
+                    "type": "string"
                 }
             },
             "required": [
@@ -18159,6 +18162,9 @@
                     "type": "string"
                 },
                 "To": {
+                    "type": "string"
+                },
+                "Version": {
                     "type": "string"
                 }
             },
@@ -18318,6 +18324,9 @@
                     "type": "string"
                 },
                 "To": {
+                    "type": "string"
+                },
+                "Version": {
                     "type": "string"
                 }
             },
@@ -18642,6 +18651,9 @@
                     "type": "string"
                 },
                 "To": {
+                    "type": "string"
+                },
+                "Version": {
                     "type": "string"
                 }
             },
@@ -25879,6 +25891,54 @@
                 "comments": {
                     "description": "The history of comments made on a port request",
                     "items": {
+                        "oneOf": [
+                            {
+                                "required": [
+                                    "account_id",
+                                    "content",
+                                    "timestamp",
+                                    "user_id"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "author",
+                                    "content",
+                                    "timestamp"
+                                ]
+                            }
+                        ],
+                        "properties": {
+                            "account_id": {
+                                "description": "Account ID of the commenter.",
+                                "type": "string"
+                            },
+                            "action_required": {
+                                "default": false,
+                                "description": "Specficied if an action is required by the port request sumbitter.",
+                                "type": "boolean"
+                            },
+                            "author": {
+                                "description": "Full name of the author",
+                                "type": "string"
+                            },
+                            "content": {
+                                "description": "Content of the comment",
+                                "type": "string"
+                            },
+                            "is_private": {
+                                "default": false,
+                                "description": "Specified if this comment is private",
+                                "type": "boolean"
+                            },
+                            "timestamp": {
+                                "type": "integer"
+                            },
+                            "user_id": {
+                                "description": "User ID of the commenter",
+                                "type": "string"
+                            }
+                        },
                         "type": "object"
                     },
                     "type": "array"
@@ -41991,126 +42051,7 @@
                 }
             }
         },
-        "/accounts/{ACCOUNT_ID}/port_requests/canceled": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/completed": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
         "/accounts/{ACCOUNT_ID}/port_requests/last_submitted": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/pending": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/rejected": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/scheduled": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/submitted": {
-            "get": {
-                "parameters": [
-                    {
-                        "$ref": "#/parameters/auth_token_header"
-                    },
-                    {
-                        "$ref": "#/parameters/ACCOUNT_ID"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "request succeeded"
-                    }
-                }
-            }
-        },
-        "/accounts/{ACCOUNT_ID}/port_requests/unconfirmed": {
             "get": {
                 "parameters": [
                     {
