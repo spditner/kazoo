@@ -82,7 +82,9 @@ public_fields(JObj) ->
 -spec read_only_public_fields(kz_json:object()) -> kz_term:api_object().
 read_only_public_fields(Doc) ->
     JObj = kz_json:from_list(
-             [{<<"port_authority">>, kzd_port_requests:port_authority(Doc)}]
+             [{<<"port_authority">>, kzd_port_requests:port_authority(Doc)}
+             ,{<<"port_authority_name">>, kzd_port_requests:port_authority_name(Doc)}
+             ]
             ),
     case kz_json:is_empty(JObj) of
         'true' -> 'undefined';
@@ -205,8 +207,9 @@ new(PortReq, Options) ->
     Unconf = [{?PORT_PVT_TYPE, ?TYPE_PORT_REQUEST}
              ,{?PORT_PVT_STATE, ?PORT_UNCONFIRMED}
              ,{?PORT_PVT_TRANSITIONS, [transition_metadata_jobj(undefined, ?PORT_UNCONFIRMED, Metadata)]}
-             ,{<<"pvt_account_name">>, props:get('account_name', Options)} %% makes port listing sane in crossbar
+             ,{<<"pvt_account_name">>, props:get_value('account_name', Options)} %% makes port listing sane in crossbar
              ,{<<"pvt_port_authority">>, props:get_value('port_authority_id', Options)}
+             ,{<<"pvt_port_authority_name">>, props:get_value('port_authority_name', Options)}
              ],
     kz_json:set_values(Unconf, Normalized).
 
