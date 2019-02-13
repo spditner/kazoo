@@ -334,26 +334,40 @@ find_port_authority(Doc) ->
 find_port_authority('undefined', 'undefined') ->
     lager:debug("master and account id is undefined"),
     'undefined';
-
 find_port_authority(MasterAccountId, 'undefined') ->
     lager:debug("account id is undefined, checking master"),
     find_port_authority(MasterAccountId, MasterAccountId);
-
 find_port_authority(MasterAccountId, MasterAccountId) ->
     lager:debug("using master account ~s as port authority", [MasterAccountId]),
     MasterAccountId;
-
 find_port_authority(MasterAccountId, AccountId) ->
-    case kzd_whitelabel:fetch_port_authority(AccountId, 'undefined') of
-        'undefined' ->
-            case kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId) of
-                AccountId ->
-                    find_port_authority(MasterAccountId, MasterAccountId);
-                ParentId ->
-                    lager:debug("no port authority key found for ~s, checking parent ~s", [AccountId, ParentId]),
-                    find_port_authority(MasterAccountId, ParentId)
-            end;
-        PortAuthority ->
-            lager:debug("using account ~s as port authority", [PortAuthority]),
-            PortAuthority
-    end.
+    find_port_authority(MasterAccountId, AccountId, kzd_whitelabel:fetch_port_authority(AccountId, 'undefined')).
+
+-spec find_port_authority(kz_term:api_ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_term:api_binary().
+find_port_authority(MasterAccountId, AccountId, 'undefined') ->
+    ParentId = kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId),
+    lager:debug("no port authority key found for ~s, checking parent ~s", [AccountId, ParentId]),
+    case ParentId of
+        AccountId ->
+            lager:debug("reached to top level account"),
+            find_port_authority(MasterAccountId, MasterAccountId);
+        ParentId ->
+            find_port_authority(MasterAccountId, ParentId)
+    end;
+find_port_authority(MasterAccountId, AccountId, AccountId) ->
+    ParentId = kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId),
+    lager:debug("port authority is same as submitted account ~s, checking parent ~s port authority"
+               ,[AccountId, ParentId]
+               ),
+    case ParentId of
+        AccountId ->
+            lager:debug("reached to top level account"),
+            find_port_authority(MasterAccountId, MasterAccountId);
+        ParentId ->
+            find_port_authority(MasterAccountId, ParentId)
+    end;
+find_port_authority(MasterAccountId, _, MasterAccountId) ->
+    find_port_authority(MasterAccountId, MasterAccountId);
+find_port_authority(_, _, PortAuthority) ->
+    lager:debug("using account ~s as port authority", [PortAuthority]),
+    PortAuthority.

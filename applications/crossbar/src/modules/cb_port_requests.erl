@@ -250,10 +250,13 @@ validate_port_requests(Context, ?HTTP_PUT) ->
 %%------------------------------------------------------------------------------
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, Id) ->
-    validate_port_request(Context, Id, cb_context:req_verb(Context)).
+    validate_port_request(set_port_authority(Context), Id, cb_context:req_verb(Context)).
 
 -spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
                                    cb_context:context().
+validate_port_request(Context, ?PATH_TOKEN_LAST_SUBMITTED, ?HTTP_GET) ->
+    C1 = cb_context:set_req_data(Context, kz_json:from_list([{<<"by_types">>, ?PATH_TOKEN_LAST_SUBMITTED}])),
+    summary(set_port_authority(C1));
 validate_port_request(Context, Id, ?HTTP_GET) ->
     read(Context, Id);
 validate_port_request(Context, Id, ?HTTP_POST) ->
@@ -285,14 +288,14 @@ validate(Context, Id, ToState=?PORT_CANCELED) ->
 validate(Context, Id, ?PORT_ATTACHMENT) ->
     validate_attachments(Context, Id, cb_context:req_verb(Context));
 validate(Context, Id, ?PATH_TOKEN_LOA) ->
-    generate_loa(read(Context, Id));
+    generate_loa(read(set_port_authority(Context), Id));
 validate(Context, Id, ?PATH_TOKEN_TIMELINE) ->
-    maybe_prepare_timeline(load_port_request(Context, Id)).
+    maybe_prepare_timeline(load_port_request(set_port_authority(Context), Id)).
 
 -spec validate(cb_context:context(), path_token(), path_token(), path_token()) ->
                       cb_context:context().
 validate(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
-    validate_attachment(Context, Id, AttachmentId, cb_context:req_verb(Context)).
+    validate_attachment(set_port_authority(Context), Id, AttachmentId, cb_context:req_verb(Context)).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -547,7 +550,7 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
                   end,
     Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
     LoadOptions = ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST),
-    crossbar_doc:patch_and_validate(PortId, Context1, ValidateFun, LoadOptions).
+    crossbar_doc:patch_and_validate(PortId, set_port_authority(Context1), ValidateFun, LoadOptions).
 
 %%%=============================================================================
 %%% Internal Validate functions
@@ -803,8 +806,8 @@ by_types_view_options(Context, Type, 'false', 'false') ->
 type_summarize_view_name([{<<"port_requests">>, _}]) ->
     ?AGENT_LISTING_BY_STATE;
 type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, [_, ?DESCENDANTS]} | _]) ->
-    ?DEV_LOG("vooli vooli voollla"),
-    ?DESCENDANT_LISTING_BY_STATE;
+    % ?DESCENDANT_LISTING_BY_STATE;
+    ?AGENT_LISTING_BY_STATE;
 type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
     ?LISTING_BY_STATE.
 
@@ -930,14 +933,25 @@ maybe_prepare_timeline(Context) ->
 
 -spec filter_private_comments(cb_context:context(), kz_json:object()) -> kz_json:object().
 filter_private_comments(Context, JObj) ->
-    Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
-              ,{[<<"is_private">>], fun kz_term:is_true/1}
+    Filters = [{[<<"superduper_comment">>], fun kz_term:is_false/1} %% old key
+              ,{[<<"is_private">>], fun kz_term:is_false/1}
               ],
+    % ?DEV_LOG("~nreq_nouns ~p~nport ~p~nauth ~p~ncontext auth ~p~n"
+    %         ,[cb_context:req_nouns(Context)
+    %          ,kz_doc:id(JObj)
+    %          ,kz_json:get_value([<<"_read_only">>, <<"port_authority">>], JObj)
+    %          ,cb_context:fetch(Context, 'port_authority_id')
+    %          ]
+    %         ),
     case cb_context:fetch(Context, 'is_port_authority') of
         'false' ->
             Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
-            kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj);
-        'true'  -> JObj
+            L = kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj),
+            ?DEV_LOG("~nComments ~p~nF ~p~n~n", [Comments, kz_json:get_list_value(<<"comments">>, L, [])]),
+            L;
+        'true'  ->
+            ?DEV_LOG("port_authority, we have more comments"),
+            JObj
     end.
 
 -spec run_comment_filter(kz_json:object(), [{kz_json:path(), fun((any()) -> boolean())}]) ->
@@ -1426,37 +1440,22 @@ create_QR_code(AccountId, PortRequestId) ->
 %%------------------------------------------------------------------------------
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
-    set_port_authority(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)).
+    set_port_authority(Context, authority_type(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context))).
 
--spec set_port_authority(cb_context:context(), req_nouns(), req_verb()) -> kz_term:ne_binary().
-set_port_authority(Context, [{<<"port_requests">>, _}], _) ->
-    set_port_authority(Context, cb_context:auth_account_id(Context));
-set_port_authority(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [AccountId]} | _], _) ->
-    case cb_context:auth_account_id(Context) of
-        AccountId ->
-            %% port authority of the authenticated account is always port authority of upper account
-            ParentId = kzd_accounts:get_parent_account_id(cb_context:account_id(Context)),
-            set_port_authority(Context, ParentId);
-        _ ->
-            set_port_authority(Context, cb_context:account_id(Context))
-    end;
-set_port_authority(Context, [{<<"port_requests">>, _}, {<<"accounts">>, Accounts} | _], Method) ->
-    case lists:member(?DESCENDANTS, Accounts)
-         andalso lists:member(Method, [?HTTP_POST, ?HTTP_PATCH])
-    of
-        'true' ->
-            %% paranoia
-            NewNouns = props:set_value(<<"accounts">>, [cb_context:account_id(Context)]),
-            set_port_authority(Context, NewNouns, Method);
-        'false' ->
-            set_port_authority(Context, cb_context:account_id(Context))
-    end.
+-spec authority_type(cb_context:context(), req_nouns(), req_verb()) -> kz_term:ne_binary().
+authority_type(Context, [{<<"port_requests">>, _}], _) ->
+    cb_context:auth_account_id(Context);
+% authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [_AccountId]} | _], _) ->
+%     cb_context:account_id(Context);
+authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, _Accounts} | _], _Method) ->
+    cb_context:account_id(Context).
 
 -spec set_port_authority(cb_context:context(), kz_term:api_ne_binary()) -> cb_context:context().
 set_port_authority(Context, AccountId) ->
     case kzd_port_requests:find_port_authority(AccountId) of
         'undefined' ->
             lager:warning("set undefined port authority to master"),
+            ?DEV_LOG("set undefined port authority to master"),
             {'ok', MasterId} = kapps_util:get_master_account_id(),
             AuthAccountId = cb_context:auth_account_id(Context),
             Setters = [{fun cb_context:store/3, 'port_authority_id', MasterId}
@@ -1465,6 +1464,15 @@ set_port_authority(Context, AccountId) ->
             cb_context:setters(Context, Setters);
         PortAuthority ->
             AuthAccountId = cb_context:auth_account_id(Context),
+            ?DEV_LOG("~nauth_account_id: ~p~npath id: ~p~naccount id: ~p~nport authority ~p~nis_port_authority ~p~nreq_nouns~p~n~n"
+                    ,[cb_context:auth_account_id(Context)
+                     ,cb_context:account_id(Context)
+                     ,AccountId
+                     ,PortAuthority
+                     ,AuthAccountId =:= PortAuthority
+                     ,cb_context:req_nouns(Context)
+                     ]
+                    ),
             Setters = [{fun cb_context:store/3, 'port_authority_id', PortAuthority}
                       ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= PortAuthority}
                       ],

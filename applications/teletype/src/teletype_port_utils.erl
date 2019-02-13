@@ -55,7 +55,7 @@ port_request_data(DataJObj, TemplateId, PortReqJObj) ->
 -spec fix_port_authority(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
 fix_port_authority(_DataJObj, _TemplateId, PortReqJObj) ->
     {'ok', MasterId} = kapps_util:get_master_account_id(),
-    case find_port_authority(PortReqJObj, MasterId) of
+    case kzd_port_requests:find_port_authority(PortReqJObj) of
         'undefined' ->
             lager:debug("port authority is undefined, using master as port authority"),
             kz_json:set_value(<<"port_authority">>
@@ -67,30 +67,6 @@ fix_port_authority(_DataJObj, _TemplateId, PortReqJObj) ->
                              ,kz_json:from_list(teletype_util:find_account_params(PortAuthority))
                              ,PortReqJObj
                              )
-    end.
-
--spec find_port_authority(kz_json:object(), kz_term:ne_binary()) -> kz_term:api_ne_binary().
-find_port_authority(PortReqJObj, MasterId) ->
-    SubmittedAccountId = kz_doc:account_id(PortReqJObj),
-    case kzd_port_requests:find_port_authority(PortReqJObj) of
-        'undefined' -> MasterId;
-        MasterId -> MasterId;
-        SubmittedAccountId ->
-            lager:debug("port authority is same as submitted account ~s, getting port authority for parent account"
-                       ,[SubmittedAccountId]
-                       ),
-            case kzd_accounts:get_parent_account_id(SubmittedAccountId) of
-                'undefined' ->
-                    lager:debug("parent account id is undefined, using master account"),
-                    MasterId;
-                SubmittedAccountId ->
-                    lager:debug("parenting loop"),
-                    SubmittedAccountId;
-                ParentId ->
-                    lager:debug("parent id ~p", [ParentId]),
-                    kzd_port_requests:find_port_authority(ParentId)
-            end;
-        PortAuthority -> PortAuthority
     end.
 
 -spec fix_numbers(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
@@ -440,8 +416,11 @@ maybe_get_submitter(DataJObj, TemplateId, 'false') ->
 
 -spec is_comment_private(kz_json:object(), kz_term:ne_binary()) -> boolean().
 is_comment_private(DataJObj, TemplateId) ->
+    SuperPaths = [[<<"comment">>, <<"superduper_comment">>]
+                 ,[<<"comment">>, <<"is_private">>]
+                 ],
     teletype_port_comment:id() =:= TemplateId
-        andalso kz_json:is_true([<<"comment">>, <<"superduper_comment">>], DataJObj, 'false').
+        andalso kz_term:is_true(kz_json:get_first_defined(SuperPaths, DataJObj, 'false')).
 
 -spec get_port_submitter_emails(kz_json:object()) -> kz_term:api_binaries().
 get_port_submitter_emails(DataJObj) ->
