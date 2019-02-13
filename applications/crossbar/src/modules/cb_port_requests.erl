@@ -286,7 +286,7 @@ validate(Context, Id, ToState=?PORT_REJECTED) ->
 validate(Context, Id, ToState=?PORT_CANCELED) ->
     patch_then_validate_then_maybe_transition(Context, Id, ToState);
 validate(Context, Id, ?PORT_ATTACHMENT) ->
-    validate_attachments(Context, Id, cb_context:req_verb(Context));
+    validate_attachments(set_port_authority(Context), Id, cb_context:req_verb(Context));
 validate(Context, Id, ?PATH_TOKEN_LOA) ->
     generate_loa(read(set_port_authority(Context), Id));
 validate(Context, Id, ?PATH_TOKEN_TIMELINE) ->
@@ -768,48 +768,47 @@ load_summary_by_type(Context, Type) ->
                ,[Type]
                ),
     IsRanged = lists:member(Type, ?PORT_COMPLETED_STATES),
-    IsAuthority = cb_context:fetch(Context, 'is_port_authority'),
-    View = type_summarize_view_name(cb_context:req_nouns(Context)),
+    AuthorityType = cb_context:fetch(Context, 'authority_type'),
+    View = type_summarize_view_name(AuthorityType),
     Options = [{'mapper', fun normalize_view_results/2}
               ,{'databases', [?KZ_PORT_REQUESTS_DB]}
               ,{'unchunkable', 'true'}
               ,{'should_paginate', 'false'}
               ,'include_docs'
-               | by_types_view_options(Context, Type, IsRanged, IsAuthority)
+               | by_types_view_options(Context, Type, IsRanged, AuthorityType)
               ],
     case IsRanged of
         'true' -> crossbar_view:load_range(Context, View, Options);
         'false' -> crossbar_view:load(Context, View, Options)
     end.
 
--spec by_types_view_options(cb_context:context(), kz_term:ne_binary(), boolean(), boolean()) -> crossbar_view:options().
-by_types_view_options(Context, Type, 'true', 'true') ->
+-spec by_types_view_options(cb_context:context(), kz_term:ne_binary(), boolean(), authority_type()) -> crossbar_view:options().
+by_types_view_options(Context, Type, 'true', 'agent') ->
     [{'range_start_keymap', [cb_context:fetch(Context, 'port_authority_id'), Type]}
     ,{'range_end_keymap', [cb_context:fetch(Context, 'port_authority_id'), Type]}
     ,{'range_key_name', <<"modified">>}
     ];
-by_types_view_options(Context, Type, 'false', 'true') ->
+by_types_view_options(Context, Type, 'false', 'agent') ->
     [{'startkey', [cb_context:fetch(Context, 'port_authority_id'), Type]}
     ,{'endkey', [cb_context:fetch(Context, 'port_authority_id'), Type, kz_json:new()]}
     ];
-by_types_view_options(Context, Type, 'true', 'false') ->
+by_types_view_options(Context, Type, 'true', _) ->
     [{'range_start_keymap', [cb_context:account_id(Context), Type]}
     ,{'range_end_keymap', [cb_context:account_id(Context), Type]}
     ,{'range_key_name', <<"modified">>}
     ];
-by_types_view_options(Context, Type, 'false', 'false') ->
+by_types_view_options(Context, Type, 'false', _) ->
     [{'startkey', [cb_context:account_id(Context), Type]}
     ,{'endkey', [cb_context:account_id(Context), Type, kz_json:new()]}
     ].
 
--spec type_summarize_view_name(req_nouns()) -> kz_term:ne_binary().
-type_summarize_view_name([{<<"port_requests">>, _}]) ->
+-spec type_summarize_view_name(authority_type()) -> kz_term:ne_binary().
+type_summarize_view_name('account') ->
+    ?LISTING_BY_STATE;
+type_summarize_view_name('agent') ->
     ?AGENT_LISTING_BY_STATE;
-type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, [_, ?DESCENDANTS]} | _]) ->
-    % ?DESCENDANT_LISTING_BY_STATE;
-    ?AGENT_LISTING_BY_STATE;
-type_summarize_view_name([{<<"port_requests">>, _}, {<<"accounts">>, _} | _]) ->
-    ?LISTING_BY_STATE.
+type_summarize_view_name('descendants') ->
+    ?DESCENDANT_LISTING_BY_STATE.
 
 -spec normalize_type_summarize_results(cb_context:context()) -> cb_context:context().
 normalize_type_summarize_results(Context) ->
@@ -936,22 +935,13 @@ filter_private_comments(Context, JObj) ->
     Filters = [{[<<"superduper_comment">>], fun kz_term:is_false/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_false/1}
               ],
-    % ?DEV_LOG("~nreq_nouns ~p~nport ~p~nauth ~p~ncontext auth ~p~n"
-    %         ,[cb_context:req_nouns(Context)
-    %          ,kz_doc:id(JObj)
-    %          ,kz_json:get_value([<<"_read_only">>, <<"port_authority">>], JObj)
-    %          ,cb_context:fetch(Context, 'port_authority_id')
-    %          ]
-    %         ),
-    case cb_context:fetch(Context, 'is_port_authority') of
+    case kzd_port_requests:port_authority(JObj) =:= cb_context:auth_account_id(Context)
+         orelse cb_context:fetch(Context, 'is_port_authority')
+    of
         'false' ->
             Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
-            L = kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj),
-            ?DEV_LOG("~nComments ~p~nF ~p~n~n", [Comments, kz_json:get_list_value(<<"comments">>, L, [])]),
-            L;
-        'true'  ->
-            ?DEV_LOG("port_authority, we have more comments"),
-            JObj
+            kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj);
+        'true'  -> JObj
     end.
 
 -spec run_comment_filter(kz_json:object(), [{kz_json:path(), fun((any()) -> boolean())}]) ->
@@ -1070,6 +1060,7 @@ successful_validation(Context, 'undefined') ->
                                   ,[{'auth_by', cb_context:auth_account_id(Context)}
                                    ,{'auth_user_id', cb_context:auth_user_id(Context)}
                                    ,{'port_authority_id', cb_context:fetch(Context, 'port_authority_id')}
+                                   ,{'port_authority_name', kzd_accounts:fetch_name(cb_context:fetch(Context, 'port_authority_id'))}
                                    ,{'account_name', cb_context:account_name(Context)}
                                    ]
                                   ),
@@ -1440,41 +1431,33 @@ create_QR_code(AccountId, PortRequestId) ->
 %%------------------------------------------------------------------------------
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
-    set_port_authority(Context, authority_type(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context))).
+    {Type, AccountId} = authority_type(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)),
+    set_port_authority(Context, Type, kzd_port_requests:find_port_authority(AccountId)).
 
--spec authority_type(cb_context:context(), req_nouns(), req_verb()) -> kz_term:ne_binary().
+-type authority_type() :: 'agent' | 'account' | 'descendants'.
+
+-spec authority_type(cb_context:context(), req_nouns(), req_verb()) -> {authority_type() , kz_term:ne_binary()}.
 authority_type(Context, [{<<"port_requests">>, _}], _) ->
-    cb_context:auth_account_id(Context);
-% authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [_AccountId]} | _], _) ->
-%     cb_context:account_id(Context);
+    {'agent', cb_context:auth_account_id(Context)};
+authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [_AccountId, ?DESCENDANTS]} | _], _) ->
+    {'descendants', cb_context:account_id(Context)};
 authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, _Accounts} | _], _Method) ->
-    cb_context:account_id(Context).
+    {'account', cb_context:account_id(Context)}.
 
--spec set_port_authority(cb_context:context(), kz_term:api_ne_binary()) -> cb_context:context().
-set_port_authority(Context, AccountId) ->
-    case kzd_port_requests:find_port_authority(AccountId) of
-        'undefined' ->
-            lager:warning("set undefined port authority to master"),
-            ?DEV_LOG("set undefined port authority to master"),
-            {'ok', MasterId} = kapps_util:get_master_account_id(),
-            AuthAccountId = cb_context:auth_account_id(Context),
-            Setters = [{fun cb_context:store/3, 'port_authority_id', MasterId}
-                      ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= MasterId}
-                      ],
-            cb_context:setters(Context, Setters);
-        PortAuthority ->
-            AuthAccountId = cb_context:auth_account_id(Context),
-            ?DEV_LOG("~nauth_account_id: ~p~npath id: ~p~naccount id: ~p~nport authority ~p~nis_port_authority ~p~nreq_nouns~p~n~n"
-                    ,[cb_context:auth_account_id(Context)
-                     ,cb_context:account_id(Context)
-                     ,AccountId
-                     ,PortAuthority
-                     ,AuthAccountId =:= PortAuthority
-                     ,cb_context:req_nouns(Context)
-                     ]
-                    ),
-            Setters = [{fun cb_context:store/3, 'port_authority_id', PortAuthority}
-                      ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= PortAuthority}
-                      ],
-            cb_context:setters(Context, Setters)
-    end.
+-spec set_port_authority(cb_context:context(), authority_type(), kz_term:api_ne_binary()) -> cb_context:context().
+set_port_authority(Context, Type, 'undefined') ->
+    lager:warning("set undefined port authority to master"),
+    {'ok', MasterId} = kapps_util:get_master_account_id(),
+    AuthAccountId = cb_context:auth_account_id(Context),
+    Setters = [{fun cb_context:store/3, 'port_authority_id', MasterId}
+              ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= MasterId}
+              ,{fun cb_context:store/3, 'authority_type', Type}
+              ],
+    cb_context:setters(Context, Setters);
+set_port_authority(Context, Type, PortAuthority) ->
+    AuthAccountId = cb_context:auth_account_id(Context),
+    Setters = [{fun cb_context:store/3, 'port_authority_id', PortAuthority}
+              ,{fun cb_context:store/3, 'is_port_authority', AuthAccountId =:= PortAuthority}
+              ,{fun cb_context:store/3, 'authority_type', Type}
+              ],
+    cb_context:setters(Context, Setters).
