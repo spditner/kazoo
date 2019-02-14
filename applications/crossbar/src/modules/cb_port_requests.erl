@@ -22,6 +22,11 @@
         ,post/2, post/4
         ,delete/2, delete/4
         ,acceptable_content_types/0
+
+        ,load_port_request/2
+        ,set_port_authority/1
+        ,validate_comments/2
+        ,send_port_comment_notifications/3
         ]).
 
 -include("crossbar.hrl").
@@ -571,24 +576,34 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
 -spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
                                     cb_context:context().
 validate_port_comments(Context, OnSuccess) ->
-    case get_new_comments(Context) of
-        [] ->
+    validate_port_comments(Context, OnSuccess, get_new_comments(Context)).
+
+-spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:objects()) -> cb_context:context().
+validate_port_comments(Context, OnSuccess, []) ->
+    successful_comments_validation(Context, OnSuccess);
+validate_port_comments(Context, OnSuccess, NewComments) ->
+    C1 = validate_comments(Context, NewComments),
+    case cb_context:resp_status(C1) =:= 'success' of
+        'true' ->
             successful_comments_validation(Context, OnSuccess);
-        NewComments ->
-            IsPortAuthority = cb_context:fetch(Context, 'is_port_authority'),
-            validate_port_comments(Context, OnSuccess, NewComments, IsPortAuthority)
+        'false' ->
+            C1
     end.
 
--spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:objects(), boolean()) ->
-                                    cb_context:context().
-validate_port_comments(Context, OnSuccess, NewComments, 'false') ->
+-spec validate_comments(cb_context:context(), kz_json:objects()) -> cb_context:context().
+validate_comments(Context, NewComments) ->
+    IsPortAuthority = cb_context:fetch(Context, 'is_port_authority', 'false')
+        orelse cb_context:is_superduper_admin(Context),
+    validate_comments(Context, NewComments, IsPortAuthority).
+
+-spec validate_comments(cb_context:context(), kz_json:objects(), boolean()) -> cb_context:context().
+validate_comments(Context, NewComments, 'false') ->
     Filters = [{[<<"action_required">>], fun kz_term:is_true/1}
               ,{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_true/1}
               ],
     case run_comment_filter(NewComments, Filters) of
-        [] ->
-            successful_comments_validation(Context, OnSuccess);
+        [] -> Context;
         [_|_] ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
@@ -596,7 +611,7 @@ validate_port_comments(Context, OnSuccess, NewComments, 'false') ->
                     ]),
             cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
     end;
-validate_port_comments(Context, OnSuccess, NewComments, 'true') ->
+validate_comments(Context, NewComments, 'true') ->
     Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_true/1}
               ],
@@ -605,8 +620,7 @@ validate_port_comments(Context, OnSuccess, NewComments, 'true') ->
              kz_json:is_true(<<"action_required">>, Comment, 'false')
          ]
     of
-        [] ->
-            successful_comments_validation(Context, OnSuccess);
+        [] -> Context;
         [_|_] ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"you're not allowed to action_required a private comment">>}
@@ -620,7 +634,7 @@ validate_port_comments(Context, OnSuccess, NewComments, 'true') ->
 successful_comments_validation(Context, OnSuccess) ->
     Doc = cb_context:doc(Context),
     Comments = kz_json:get_list_value(<<"comments">>, Doc, []),
-    NewDoc = kz_json:set_value(<<"comments">>, lists:sort(fun sort_comments_by_timestamp/2, Comments), Doc),
+    NewDoc = kz_json:set_value(<<"comments">>, cb_comments:sort(Comments), Doc),
     OnSuccess(cb_context:set_doc(Context, NewDoc)).
 
 -spec validate_attachments(cb_context:context(), kz_term:ne_binary(), http_method()) ->
@@ -949,6 +963,7 @@ filter_private_comments(Context, JObj) ->
               ],
     case kzd_port_requests:port_authority(JObj) =:= cb_context:auth_account_id(Context)
         orelse cb_context:fetch(Context, 'is_port_authority')
+        orelse cb_context:is_superduper_admin(Context)
     of
         'false' ->
             Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
@@ -1350,9 +1365,8 @@ maybe_revert_patch(Context, 'false') ->
 -spec get_new_comments(cb_context:context()) -> kz_json:objects().
 get_new_comments(Context) ->
     ReqData = cb_context:req_data(Context),
-    Sort = fun(Cs) -> lists:sort(fun sort_comments_by_timestamp/2, Cs) end,
-    ReqComments = Sort(kz_json:get_list_value(<<"comments">>, ReqData, [])),
-    case Sort(kz_json:get_list_value(<<"comments">>, cb_context:fetch(Context, 'db_doc'), [])) of
+    ReqComments = cb_comments:sort(kz_json:get_list_value(<<"comments">>, ReqData, [])),
+    case cb_comments:sort(kz_json:get_list_value(<<"comments">>, cb_context:fetch(Context, 'db_doc'), [])) of
         [] -> ReqComments;
         Comments ->
             OldTime = kz_json:get_integer_value(<<"timestamp">>, lists:last(Comments)),
@@ -1361,10 +1375,7 @@ get_new_comments(Context) ->
             ]
     end.
 
--spec sort_comments_by_timestamp(kz_json:object(), kz_json:object()) -> boolean().
-sort_comments_by_timestamp(CommentA, CommentB) ->
-    kz_json:get_integer_value(<<"timestamp">>, CommentA) =< kz_json:get_integer_value(<<"timestamp">>, CommentB).
-
+-spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> 'ok'.
 send_port_comment_notifications(Context, Id, Comments) ->
     _ = lists:foldl(fun send_port_comment_notification/2, {Context, Id, length(Comments), 0}, Comments),
     'ok'.
@@ -1443,17 +1454,22 @@ create_QR_code(AccountId, PortRequestId) ->
 %%------------------------------------------------------------------------------
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
-    {Type, AccountId} = authority_type(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)),
+    {Type, AccountId} = authority_type(Context, cb_context:req_nouns(Context)),
     set_port_authority(Context, Type, kzd_port_requests:find_port_authority(AccountId)).
 
 -type authority_type() :: 'agent' | 'account' | 'descendants'.
 
--spec authority_type(cb_context:context(), req_nouns(), req_verb()) -> {authority_type() , kz_term:ne_binary()}.
-authority_type(Context, [{<<"port_requests">>, _}], _) ->
+-spec authority_type(cb_context:context(), req_nouns()) -> {authority_type() , kz_term:ne_binary()}.
+authority_type(Context, Nouns) ->
+    Accounts = props:get_value(<<"accounts">>, Nouns),
+    PortRequests = props:get_value(<<"port_requests">>, Nouns),
+    authority_type(Context, PortRequests, Accounts).
+
+authority_type(Context, [_PortId | _], 'undefined') ->
     {'agent', cb_context:auth_account_id(Context)};
-authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, [_AccountId, ?DESCENDANTS]} | _], _) ->
+authority_type(Context, [_PortId | _], [_AccountId, ?DESCENDANTS]) ->
     {'descendants', cb_context:account_id(Context)};
-authority_type(Context, [{<<"port_requests">>, _}, {<<"accounts">>, _Accounts} | _], _Method) ->
+authority_type(Context, [_PortId | _], [_AccountId | _]) ->
     {'account', cb_context:account_id(Context)}.
 
 -spec set_port_authority(cb_context:context(), authority_type(), kz_term:api_ne_binary()) -> cb_context:context().
