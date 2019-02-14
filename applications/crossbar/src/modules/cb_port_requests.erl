@@ -89,17 +89,24 @@ init() ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec authorize(cb_context:context()) ->
-                       boolean() |
+                       'false' |
+                       {'true', cb_context:context()} |
                        {'stop', cb_context:context()}.
 authorize(Context) ->
     authorize(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)).
 
--spec authorize(cb_context:context(), req_nouns(), req_verb()) -> 'true'.
+-spec authorize(cb_context:context(), req_nouns(), req_verb()) ->
+                       boolean() |
+                       {'true', cb_context:context()} |
+                       {'stop', cb_context:context()}.
 authorize(Context, [{<<"port_requests">>, []}], ?HTTP_GET) ->
-    case cb_context:is_superduper_admin(Context) of
-        'true' -> 'true';
+    C1 = set_port_authority(Context),
+    case cb_context:fetch(C1, 'is_port_authority', 'false')
+         orelse cb_context:is_superduper_admin(C1)
+    of
+        'true' -> {'true', C1};
         'false' ->
-            {'stop', cb_context:add_system_error('forbidden', Context)}
+            {'stop', cb_context:add_system_error('forbidden', C1)}
     end;
 authorize(Context, [{<<"port_requests">>, []}], _) ->
     {'stop', cb_context:add_system_error('forbidden', Context)};
@@ -1455,22 +1462,32 @@ create_QR_code(AccountId, PortRequestId) ->
 -spec set_port_authority(cb_context:context()) -> cb_context:context().
 set_port_authority(Context) ->
     {Type, AccountId} = authority_type(Context, cb_context:req_nouns(Context)),
-    set_port_authority(Context, Type, kzd_port_requests:find_port_authority(AccountId)).
+    set_port_authority(Context, Type, find_port_authority(Type, AccountId)).
 
 -type authority_type() :: 'agent' | 'account' | 'descendants'.
 
 -spec authority_type(cb_context:context(), req_nouns()) -> {authority_type() , kz_term:ne_binary()}.
 authority_type(Context, Nouns) ->
     Accounts = props:get_value(<<"accounts">>, Nouns),
-    PortRequests = props:get_value(<<"port_requests">>, Nouns),
+    PortRequests = props:get_value(<<"port_requests">>, Nouns) =/= 'undefined',
     authority_type(Context, PortRequests, Accounts).
 
-authority_type(Context, [_PortId | _], 'undefined') ->
+-spec authority_type(cb_context:context(), boolean(), path_tokens() | 'undefined') -> cb_context:context().
+authority_type(Context, 'true', 'undefined') ->
     {'agent', cb_context:auth_account_id(Context)};
-authority_type(Context, [_PortId | _], [_AccountId, ?DESCENDANTS]) ->
+authority_type(Context, 'true', [_AccountId, ?DESCENDANTS]) ->
     {'descendants', cb_context:account_id(Context)};
-authority_type(Context, [_PortId | _], [_AccountId | _]) ->
+authority_type(Context, 'true', [_AccountId | _]) ->
     {'account', cb_context:account_id(Context)}.
+
+-spec find_port_authority(authority_type(), kz_term:ne_binary()) -> kz_term:api_ne_binary().
+find_port_authority('agent', AccountId) ->
+    case kzd_whitelabel:fetch_port_authority(AccountId, 'undefined') of
+        AccountId -> AccountId;
+        _ -> kzd_port_requests:find_port_authority(AccountId)
+    end;
+find_port_authority(_, AccountId) ->
+    kzd_port_requests:find_port_authority(AccountId).
 
 -spec set_port_authority(cb_context:context(), authority_type(), kz_term:api_ne_binary()) -> cb_context:context().
 set_port_authority(Context, Type, 'undefined') ->
