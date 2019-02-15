@@ -157,7 +157,7 @@ descendant_active_ports(AccountId) ->
 -spec is_active_descendant_port(kz_json:object()) -> boolean().
 is_active_descendant_port(JObj) ->
     Doc = kz_json:get_value(<<"doc">>, JObj),
-    lists:member(kzd_port_requests:port_state(Doc), ?PORT_ACTIVE_STATES).
+    lists:member(kz_json:get_ne_binary_value(?PORT_PVT_STATE, Doc), ?PORT_ACTIVE_STATES).
 
 %%------------------------------------------------------------------------------
 %% @doc

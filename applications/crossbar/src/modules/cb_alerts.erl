@@ -265,7 +265,7 @@ check_port_action_required(PortRequest, Context) ->
         'true' ->
             Metadata = kz_json:from_list(
                          [{<<"name">>, kzd_port_requests:name(PortRequest)}
-                         ,{<<"state">>, kzd_port_requests:port_state(PortRequest)}
+                         ,{<<"state">>, kz_json:get_ne_binary_value(?PORT_PVT_STATE, PortRequest)}
                          ]
                         ),
             From = kz_json:from_list(
@@ -301,7 +301,7 @@ port_request_last_comment(PortRequest) ->
 -spec check_port_suspended(kzd_port_requests:doc(), cb_context:context()) ->
                                   cb_context:context().
 check_port_suspended(PortRequest, Context) ->
-    State = kzd_port_requests:port_state(PortRequest),
+    State = kz_json:get_ne_binary_value(?PORT_PVT_STATE, PortRequest),
     case lists:member(State, ?PORT_SUSPENDED_STATES) of
         'false' -> Context;
         'true' ->

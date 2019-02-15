@@ -23,7 +23,6 @@
 -export([notifications_email_send_to/1, notifications_email_send_to/2, set_notifications_email_send_to/2]).
 -export([numbers/1, numbers/2, set_numbers/2]).
 -export([number/2, number/3, set_number/3]).
--export([port_state/1, port_state/2, set_port_state/2]).
 -export([signee_name/1, signee_name/2, set_signee_name/2]).
 -export([signing_date/1, signing_date/2, set_signing_date/2]).
 -export([transfer_date/1, transfer_date/2, set_transfer_date/2]).
@@ -243,18 +242,6 @@ number(Doc, Number, Default) ->
 -spec set_number(doc(), kz_json:key(), kz_json:object()) -> doc().
 set_number(Doc, Number, Value) ->
     kz_json:set_value([<<"numbers">>, Number], Value, Doc).
-
--spec port_state(doc()) -> binary().
-port_state(Doc) ->
-    port_state(Doc, <<"unconfirmed">>).
-
--spec port_state(doc(), Default) -> binary() | Default.
-port_state(Doc, Default) ->
-    kz_json:get_binary_value([<<"port_state">>], Doc, Default).
-
--spec set_port_state(doc(), binary()) -> doc().
-set_port_state(Doc, PortState) ->
-    kz_json:set_value([<<"port_state">>], PortState, Doc).
 
 -spec signee_name(doc()) -> kz_term:api_binary().
 signee_name(Doc) ->

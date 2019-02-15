@@ -27,7 +27,6 @@ Key | Description | Type | Default | Required | Support Level
 `notifications` | Status notifications | `object()` |   | `false` |  
 `numbers./\+?[0-9]+/` |   | `object()` |   | `false` |  
 `numbers` | The numbers to port in | `object()` |   | `true` |  
-`port_state` | What state the port request is currently in | `string('unconfirmed' | 'pending' | 'submitted' | 'scheduled' | 'completed' | 'rejected' | 'canceled')` | `unconfirmed` | `false` |  
 `signee_name` | The name of the person authorizing the release of numbers from the losing carrier | `string()` |   | `false` |  
 `signing_date` | The date in Gregorian timestamp on which the document releasing the numbers from the losing carrier was signed | `integer()` |   | `false` |  
 `transfer_date` | Requested transfer date in Gregorian timestamp | `integer()` |   | `false` |  

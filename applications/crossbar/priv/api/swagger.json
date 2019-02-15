@@ -25999,20 +25999,6 @@
                     "minProperties": 1,
                     "type": "object"
                 },
-                "port_state": {
-                    "default": "unconfirmed",
-                    "description": "What state the port request is currently in",
-                    "enum": [
-                        "unconfirmed",
-                        "pending",
-                        "submitted",
-                        "scheduled",
-                        "completed",
-                        "rejected",
-                        "canceled"
-                    ],
-                    "type": "string"
-                },
                 "signee_name": {
                     "description": "The name of the person authorizing the release of numbers from the losing carrier",
                     "type": "string"
