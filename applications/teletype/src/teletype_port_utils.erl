@@ -297,7 +297,7 @@ maybe_add_user_data(DataJObj, Author, 'true') ->
         'undefined' ->
             [{<<"author">>, Author}];
         UserDoc ->
-            [{<<"author">>, kzd_users:full_name(kzd_users:first_name(UserDoc), kzd_users:last_name(UserDoc))}
+            [{<<"author">>, kzd_users:full_name(UserDoc, <<"An agent">>)}
              | teletype_util:user_params(UserDoc)
             ]
     end;
@@ -318,9 +318,7 @@ maybe_add_user_data(DataJObj, Author, 'false') ->
         {'error', _} ->
             [{<<"author">>, Author}];
         {'ok', UserDoc} ->
-            [{<<"author">>
-             ,kzd_users:full_name(kzd_users:first_name(UserDoc), kzd_users:last_name(UserDoc), <<"An agent">>)
-             }
+            [{<<"author">>, kzd_users:full_name(UserDoc, <<"An agent">>)}
              | teletype_util:user_params(UserDoc)
             ]
     end.

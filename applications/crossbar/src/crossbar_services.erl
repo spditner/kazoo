@@ -171,11 +171,7 @@ audit_log_user(Context, UserId) ->
             ,{<<"account_id">>, cb_context:auth_account_id(Context)}
             ,{<<"first_name">>, kzd_users:first_name(JObj)}
             ,{<<"last_name">>, kzd_users:last_name(JObj)}
-            ,{<<"full_name">>, kzd_users:full_name(kzd_users:first_name(JObj)
-                                                  ,kzd_users:last_name(JObj)
-                                                  ,kzd_users:username(JObj, kzd_users:email(JObj))
-                                                  )
-             }
+            ,{<<"full_name">>, kzd_users:full_name(JObj, kzd_users:username(JObj, kzd_users:email(JObj)))}
             ]
     end.
 

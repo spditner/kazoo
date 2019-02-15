@@ -310,11 +310,8 @@ successful_transition(JObj, FromState, ToState, Metadata) ->
 -spec transition_metadata_jobj(kz_term:api_ne_binary(), kz_term:ne_binary(), transition_metadata()) -> kz_json:object().
 transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
                                               ,auth_account_name := AuthAccountName
-                                              ,auth_user_id := OptionalUserId
-                                              ,user_first_name := OptionalFirstName
-                                              ,user_last_name := OptionalLastName
                                               ,optional_reason := OptionalReason
-                                              }) ->
+                                              }=Metadata) ->
     kz_json:from_list_recursive(
       [{?TRANSITION_TIMESTAMP, kz_time:now_s()}
       ,{?TRANSITION_TYPE, ?PORT_TRANSITION}
@@ -326,16 +323,21 @@ transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
                              ,{<<"account">>, [{<<"id">>, AuthAccountId}
                                               ,{<<"name">>, AuthAccountName}
                                               ]}
-                              | maybe_user(OptionalUserId, OptionalFirstName, OptionalLastName)
+                              | maybe_user(Metadata)
                              ]}
       ]).
 
--spec maybe_user(kz_term:api_ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> kz_term:proplist().
-maybe_user(undefined, _, _) -> [];
-maybe_user(UserId, OptionalFirstName, OptionalLastName) ->
+-spec maybe_user(transition_metadata()) -> kz_term:proplist().
+maybe_user(#{auth_user_id := undefine}) -> [];
+maybe_user(#{auth_user_id := UserId
+            ,user_first_name := OptionalFirstName
+            ,user_last_name := OptionalLastName
+            ,user_full_name := OptionalFullName
+            }) ->
     [{<<"user">>, [{<<"id">>, UserId}
                   ,{<<"first_name">>, OptionalFirstName}
                   ,{<<"last_name">>, OptionalLastName}
+                  ,{<<"full_name">>, OptionalFullName}
                   ]}
     ].
 
@@ -358,7 +360,7 @@ transition_metadata(?MATCH_ACCOUNT_RAW(AuthAccountId), UserId, Reason) ->
                          ?NE_BINARY -> UserId;
                          _ -> undefined
                      end,
-    {FirstName, LastName} = get_user_name(AuthAccountId, OptionalUserId),
+    UserJObj = get_user_name(AuthAccountId, OptionalUserId),
     OptionalReason = case Reason of
                          ?NE_BINARY -> Reason;
                          _ -> undefined
@@ -368,17 +370,17 @@ transition_metadata(?MATCH_ACCOUNT_RAW(AuthAccountId), UserId, Reason) ->
      ,auth_user_id => OptionalUserId
      ,user_first_name => FirstName
      ,user_last_name => LastName
-     ,user_full_name => kzd_users:full_name(FirstName, LastName)
+     ,user_full_name => kzd_users:full_name(UserJObj, kzd_users:username(UserJObj, kzd_users:email(UserJObj)))
      ,optional_reason => OptionalReason
      }.
 
--spec get_user_name(kz_term:ne_binary(), kz_term:api_ne_binary()) -> {kz_term:api_ne_binary(), kz_term:api_ne_binary()}.
+-spec get_user_name(kz_term:ne_binary(), kz_term:api_ne_binary()) -> kz_json:object().
 get_user_name(AuthAccountId, UserId) ->
     case kzd_users:fetch(AuthAccountId, UserId) of
-        {ok, UserJObj} -> {kzd_users:first_name(UserJObj), kzd_users:last_name(UserJObj)};
+        {ok, UserJObj} -> UserJObj;
         {error, _R} ->
             lager:warning("cannot read ~s's username: ~p", [UserId, _R]),
-            {undefined, undefined}
+            kz_json:new()
     end.
 
 %%------------------------------------------------------------------------------
