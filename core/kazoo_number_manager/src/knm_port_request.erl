@@ -368,8 +368,8 @@ transition_metadata(?MATCH_ACCOUNT_RAW(AuthAccountId), UserId, Reason) ->
     #{auth_account_id => AuthAccountId
      ,auth_account_name => kzd_accounts:fetch_name(AuthAccountId)
      ,auth_user_id => OptionalUserId
-     ,user_first_name => FirstName
-     ,user_last_name => LastName
+     ,user_first_name => kzd_users:first_name(UserJObj)
+     ,user_last_name => kzd_users:last_name(UserJObj)
      ,user_full_name => kzd_users:full_name(UserJObj, kzd_users:username(UserJObj, kzd_users:email(UserJObj)))
      ,optional_reason => OptionalReason
      }.
