@@ -1310,7 +1310,7 @@ port_state_change_notify(Context, Id, State) ->
             lager:debug("failed to send the  port ~s notification, maybe reverting the state change: ~s:~p"
                        ,[State, _E, _R]
                        ),
-            maybe_revert_patch(Context, is_managed_by_phonebook(Context))
+            maybe_revert_patch(Context, phonebook:should_send_to_phonebook(Context))
     end.
 
 -spec state_change_notify_fun(kz_term:ne_binary()) -> function().
@@ -1337,24 +1337,9 @@ state_change_reason_props(Context, ?NE_BINARY=Reason) ->
 state_change_reason_props(_, _) ->
     'undefined'.
 
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec is_managed_by_phonebook(cb_context:context()) -> boolean().
-is_managed_by_phonebook(Context) ->
-    MasterId = case kapps_util:get_master_account_id() of
-                   {'ok', Id} -> Id;
-                   {'error', _} ->
-                       cb_context:fetch(Context, 'port_authority_id')
-               end,
-    phonebook:phonebook_enabled()
-        andalso cb_context:fetch(Context, 'port_authority_id') =:= MasterId
-        andalso not phonebook:req_from_phonebook(Context).
-
 -spec maybe_revert_patch(cb_context:context(), boolean()) -> cb_context:context().
 maybe_revert_patch(Context, 'true') ->
-    lager:debug("port is managed by phonebook, can not reverting"),
+    lager:debug("port is managed by phonebook, can not revert"),
     Context;
 maybe_revert_patch(Context, 'false') ->
     lager:debug("port is not managed by phonebook, reverting"),
