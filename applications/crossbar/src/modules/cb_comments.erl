@@ -104,15 +104,23 @@ resource_exists(_) -> 'true'.
 
 -spec validate(cb_context:context()) -> cb_context:context().
 validate(Context) ->
-    validate_comments(set_resource(Context), cb_context:req_verb(Context)).
+    C1 = set_resource(Context),
+    {Type, _} = cb_context:fetch(C1, 'resource'),
+    validate_comments(C1, Type, cb_context:req_verb(Context)).
 
--spec validate_comments(cb_context:context(), http_method()) ->
+-spec validate_comments(cb_context:context(), path_token(), http_method()) ->
                                cb_context:context().
-validate_comments(Context, ?HTTP_GET) ->
+validate_comments(Context, _, ?HTTP_GET) ->
     summary(Context);
-validate_comments(Context, ?HTTP_PUT) ->
+validate_comments(Context, _, ?HTTP_PUT) ->
     load_doc(Context);
-validate_comments(Context, ?HTTP_DELETE) ->
+validate_comments(Context, <<"port_requests">>, ?HTTP_DELETE) ->
+    Msg = kz_json:from_list(
+            [{<<"message">>, <<"delete operation on comments is not allowed">>}
+            ,{<<"cause">>, <<"comments">>}
+            ]),
+    cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context);
+validate_comments(Context, _, ?HTTP_DELETE) ->
     load_doc(Context).
 
 %%------------------------------------------------------------------------------
@@ -121,15 +129,23 @@ validate_comments(Context, ?HTTP_DELETE) ->
 %%------------------------------------------------------------------------------`
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, Id) ->
-    validate_comment(set_resource(Context), Id, cb_context:req_verb(Context)).
+    C1 = set_resource(Context),
+    {Type, _} = cb_context:fetch(C1, 'resource'),
+    validate_comment(C1, Id, Type, cb_context:req_verb(Context)).
 
--spec validate_comment(cb_context:context(), path_token(), http_method()) ->
+-spec validate_comment(cb_context:context(), path_token(), path_token(), http_method()) ->
                               cb_context:context().
-validate_comment(Context, Id, ?HTTP_GET) ->
+validate_comment(Context, _, <<"port_requests">>, _) ->
+    Msg = kz_json:from_list(
+            [{<<"message">>, <<"operation on a single comment is not allowed">>}
+            ,{<<"cause">>, <<"comments">>}
+            ]),
+    cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context);
+validate_comment(Context, Id, _, ?HTTP_GET) ->
     read(Context, Id);
-validate_comment(Context, Id, ?HTTP_POST) ->
+validate_comment(Context, Id, _, ?HTTP_POST) ->
     check_comment_number(Context, Id);
-validate_comment(Context, Id, ?HTTP_DELETE) ->
+validate_comment(Context, Id, _, ?HTTP_DELETE) ->
     check_comment_number(Context, Id).
 
 %%------------------------------------------------------------------------------
@@ -360,8 +376,7 @@ load_doc(Context, _Type, _) ->
 %%------------------------------------------------------------------------------
 -spec only_return_comments(cb_context:context()) -> cb_context:context().
 only_return_comments(Context) ->
-    Doc = cb_context:doc(Context),
-    Comments = kz_json:get_value(?COMMENTS, Doc, []),
+    Comments = get_comments(Context),
     cb_context:set_resp_data(Context
                             ,kz_json:from_list([{?COMMENTS, Comments}])
                             ).
@@ -379,6 +394,16 @@ only_return_comment(Context, Id) ->
     cb_context:set_resp_data(Context
                             ,lists:nth(Number, Comments)
                             ).
+
+get_comments(Context) ->
+    {Type, _} = cb_context:fetch(Context, 'resource'),
+    get_comments(Context, Type).
+
+get_comments(Context, <<"port_requests">>) ->
+    Doc = cb_context:doc(Context),
+    kz_json:get_list_value(?COMMENTS, cb_port_requests:filter_private_comments(Context, Doc), []);
+get_comments(Context, _) ->
+    kz_json:get_value(?COMMENTS, cb_context:doc(Context), []).
 
 %%------------------------------------------------------------------------------
 %% @doc

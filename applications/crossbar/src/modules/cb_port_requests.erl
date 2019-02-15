@@ -26,6 +26,7 @@
         ,load_port_request/2
         ,set_port_authority/1
         ,validate_comments/2
+        ,filter_private_comments/2
         ,send_port_comment_notifications/3
         ]).
 
