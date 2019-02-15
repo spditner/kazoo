@@ -745,6 +745,7 @@ summary(Context) ->
 summarize_by_types(Context) ->
     case cb_context:req_value(Context, <<"by_types">>) of
         'undefined' -> load_summary_by_types(Context, ?PORT_ACTIVE_STATES);
+        <<"active">> -> load_summary_by_types(Context, ?PORT_ACTIVE_STATES);
         <<"all">> -> load_summary_by_types(Context, ?PORT_STATES);
         <<"progressing">> -> load_summary_by_types(Context, ?PORT_PROGRESSING_STATES);
         <<"suspended">> -> load_summary_by_types(Context, ?PORT_SUSPENDED_STATES);
@@ -895,9 +896,11 @@ load_summary_by_number(Context, Number) ->
 -spec normalize_number_summarize_results(cb_context:context(), kz_json:object(), kz_json:objects()) ->
                                                 kz_json:objects().
 normalize_number_summarize_results(Context, JObj, Acc) ->
-    case lists:member(cb_context:auth_account_id(Context)
-                     ,kzd_accounts:tree(JObj)
-                     )
+    AccountId = case cb_context:account_id(Context) of
+                    'undefined' -> cb_context:auth_account_id(Context);
+                    Id -> Id
+                end,
+    case lists:member(AccountId, kzd_accounts:tree(kz_json:get_value(<<"doc">>, JObj)))
         orelse cb_context:is_superduper_admin(Context)
     of
         'true' -> normalize_view_results(JObj, Acc);
