@@ -1,7 +1,36 @@
 # Number Port Requests
 
-* [About Port Requests](#about-port-requests)
-* [Schema](#schema)
+## About Port Requests
+
+Manage and track number port requests through the Port Requests API.
+
+A port request can be in one of seven **states**:
+
+* `unconfirmed`: A port request has been created, but the details have not been confirmed and the port process has not started.
+* `submitted`: Indicates the number port is ready to be processed and sent to the losing carrier.
+* `pending`: The port was submitted to the losing carrier.
+* `scheduled`: The port is in progress and the losing carrier has been notified.
+* `completed`: The port request has been finished, and numbers are activated.
+* `rejected`: Something has gone wrong during the port process. The port can be resubmitted.
+* `canceled`: The port request is definitely canceled and cannot be resubmitted.
+
+![porting state flow](images/port-request-states-flow.svg)
+
+### Port authority (Port Agent)
+
+Port authority (sometimes called port agent or simply agent) is an account in Kazoo system which is responsible for managing
+their sub account port requests. They are responsible to submitted and oversees port request to losing/winner carrier.
+
+Master account is default port authority.
+
+If you want to manage port request for your sub account, you have to white label your account
+and set "I will manage port request from my account" in Branding application, "Advanced" tab.
+If you select that option, you have to set an Email address for port "Support Contact" in the same section.
+
+
+<details>
+<summary>Table of Content</summary>
+
 * Utils
     + [Build an LOA PDF from a port request](#build-an-loa-pdf-from-a-port-request)
     + [Get port request by phone number](#get-a-port-request-by-phone-number)
@@ -45,22 +74,7 @@
     - [Get](#get-an-attachment-from-a-port-request)
     - [Update](#replace-an-attachment-on-a-port-request)
     - [Delete](#delete-an-attachment-on-a-port-request)
-
-## About Port Requests
-
-Manage and track number port requests through the Port Requests API.
-
-A port request can be in one of seven **states**:
-
-* `unconfirmed`: A port request has been created, but the details have not been confirmed and the port process has not started.
-* `submitted`: Indicates the number port is ready to be processed and sent to the losing carrier.
-* `pending`: The port was submitted to the losing carrier.
-* `scheduled`: The port is in progress and the losing carrier has been notified.
-* `completed`: The port request has been finished, and numbers are activated.
-* `rejected`: Something has gone wrong during the port process. The port can be resubmitted.
-* `canceled`: The port request is definitely canceled and cannot be resubmitted.
-
-![porting state flow](images/port-request-states-flow.svg)
+</details>
 
 #### Schema
 
@@ -101,49 +115,74 @@ Key | Description | Type | Default | Required | Support Level
 
 
 
-#### Fetch
+## List port requests
 
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests
+Port request API URL path has specific meaning:
 
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests
+* `/v2/port_requests`: List port requests that the authenticated account is port authority for.
+* `/v2/accounts/{ACCOUNT_ID}`: List only port request for a specific account.
+* `/v2/accounts/{ACCOUNT_ID}/descendants`: List all sub-accounts port requests.V
+
+#### List port requests by type
+
+You can issue GET requests to find all ports in a particular state.
+
+To do this add `by_types` query string to the request. If you don't set  `by_types`, by default `active` port request will be shown. Possible values are:
+
+All requests are not paginated, with the exception of the `completed` state. Use pagination toggles for date range as desired.
+
+* `all`: Lists port requests in any state
+* `active`: Lists port requests which are in these states:
+    * `unconfirmed`
+    * `submitted`
+    * `pending`
+    * `scheduled`
+    * `rejected`
+* `progressing`: Lists port requests which are in these states:
+    * `submitted`
+    * `pending`
+    * `scheduled`
+* `suspended`: Lists port requests which are in these states:
+    * `unconfirmed`
+    * `rejected`
+* `completed`: Lists port requests which are in these states:
+    * `completed`
+    * `canceled`
+* `last_submitted`: Lists all port requests by their last transition to the `submitted` state
+* Port requests states: List port requests bu their states:
+    * `unconfirmed`
+    * `submitted`
+    * `pending`
+    * `scheduled`
+    * `completed`
+    * `rejected`
+    * `canceled`
+
+##### Example usage of by_type
+
+Here an example of setting `by_types`:
+
+```
+/v2/port_requests?by_types=prgressing
+/v2/accounts/{ACCOUNT_ID}/port_requests?by_types=prgressing
 ```
 
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "{ACCOUNT_ID}",
-                    "created": 63630097779,
-                    "id": "462da37f8be11e46161fb40bc71173a9",
-                    "name": "Porting 202.555.9000",
-                    "numbers": {
-                        "+12025559000": {}
-                    },
-                    "port_state": "unconfirmed",
-                    "sent": false,
-                    "updated": 63630097779,
-                    "uploads": {}
-                }
-            ]
-        }
-    ],
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
+You can also specify multiple types by separating them by comma like example below:
+
+```
+/v2/port_requests?by_types=pending,scheduled,rejected
+/v2/accounts/{ACCOUNT_ID}/port_requests?by_types=pending,scheduled,rejected
 ```
 
-#### Search a port request by phone number from superduper admin across all sub-accounts
+#### Search/list a port request by phone number
 
-> GET /v2/port_requests
+For finding a port request by a phone number set `by_number` in query string. Including an account ID in the URL will change how the port requests are searched:
+
+* `/v2/port_requests?by_number={PHONE_NUMBER}`: This will search for port request in the authenticated account and all its sub-accounts.
+* `/v2/accounts/{ACCOUNT_ID}/port_requests`: This will search in the `{ACCOUNT_ID}` and all its sub-account
+
+<details>
+<summary>Example Request/Response</summary>
 
 ```shell
 curl -v -X GET \
@@ -180,65 +219,24 @@ curl -v -X GET \
     "status": "success"
 }
 ```
+</details>
 
 
-#### Get a port request by phone number
+### List port requests that are managed by you
 
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests
+This lists all port requests that you (authenticated account) are managing.
+See [Port Authority](#port-authority-port-agent) for more details.
 
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests?by_number={PHONE_NUMBER}
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "created": 63630107130,
-            "id": "0684aa1e2785d62c76ce27d2451a1c26",
-            "name": "Porting 202.555.9000",
-            "numbers": {
-                "{PHONE_NUMBER}": {}
-            },
-            "port_state": "canceled",
-            "sent": false,
-            "updated": 63630120578,
-            "uploads": {
-                "file.pdf": {
-                    "content_type": "application/pdf",
-                    "length": 90931
-                }
-            }
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
-
-
-#### Listing by port state
-
-You can issue GET requests to find all ports in a particular state too.
-
-All requests are not paginated, with the exception of the `completed` state.
-Use pagination toggles for date range as desired.
-
-##### Listing by `unconfirmed` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/unconfirmed
+> GET /v2/port_requests
 
 ```shell
 curl -v -X GET \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/unconfirmed
+    http://{SERVER}:8000/v2/port_requests
 ```
+
+<details>
+<summary>Click to show sample response</summary>
 
 ```json
 {
@@ -264,266 +262,30 @@ curl -v -X GET \
             ]
         }
     ],
-    "page_size": 1,
     "request_id": "{REQUEST_ID}",
     "revision": "{REVISION}",
     "status": "success"
 }
 ```
+</details>
 
-##### Listing by `submitted` port
 
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/submitted
+### List port requests for an account
+
+This only lists port requests of a single account.
+
+> GET /v2/accounts/{ACCOUNT_ID}/port_requests
 
 ```shell
 curl -v -X GET \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/submitted
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests
 ```
 
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "009afc511c97b2ae693c6cc4920988e8",
-                    "created": 63630130298,
-                    "id": "c320d6506f1afcd715a1a49bac019c51",
-                    "name": "My port req1",
-                    "numbers": {
-                        "+12025559042": {}
-                    },
-                    "port_state": "submitted",
-                    "sent": false,
-                    "updated": 63630130376,
-                    "uploads": {}
-                }
-            ]
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
+Response is same as [listing for agent](#list-port-requests-that-are-managed-by-you).
 
 
-##### Listing by `pending` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/pending
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/pending
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "009afc511c97b2ae693c6cc4920988e8",
-                    "created": 63630130298,
-                    "id": "c320d6506f1afcd715a1a49bac019c51",
-                    "name": "My port req1",
-                    "numbers": {
-                        "+12025559042": {}
-                    },
-                    "port_state": "pending",
-                    "sent": false,
-                    "updated": 63630130450,
-                    "uploads": {}
-                }
-            ]
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
-
-
-##### Listing by `scheduled` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/scheduled
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/scheduled
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "009afc511c97b2ae693c6cc4920988e8",
-                    "created": 63630130298,
-                    "id": "c320d6506f1afcd715a1a49bac019c51",
-                    "name": "My port req1",
-                    "numbers": {
-                        "+12025559042": {}
-                    },
-                    "port_state": "scheduled",
-                    "schedule_on": {
-                        "date_time": "2017-06-24 12:00",
-                        "timezone": "America/New_York"
-                    },
-                    "scheduled_date": 63665539200,
-                    "sent": false,
-                    "updated": 63630130490,
-                    "uploads": {}
-                }
-            ]
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
-
-
-##### Listing by `completed` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/completed
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/completed
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [],
-    "page_size": 0,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "start_key": [
-        "009afc511c97b2ae693c6cc4920988e8",
-        "completed",
-        63630130530
-    ],
-    "status": "success"
-}
-```
-
-
-##### Listing by `rejected` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/rejected
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/rejected
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "009afc511c97b2ae693c6cc4920988e8",
-                    "created": 63630130298,
-                    "id": "c320d6506f1afcd715a1a49bac019c51",
-                    "name": "My port req1",
-                    "numbers": {
-                        "+12025559042": {}
-                    },
-                    "port_state": "rejected",
-                    "sent": false,
-                    "updated": 63630130557,
-                    "uploads": {}
-                }
-            ]
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
-
-
-##### Listing by `canceled` port
-
-> GET /v2/accounts/{ACCOUNT_ID}/port_requests/canceled
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/canceled
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "account_id": "{ACCOUNT_ID}",
-            "account_name": "{ACCOUNT_NAME}",
-            "port_requests": [
-                {
-                    "account_id": "009afc511c97b2ae693c6cc4920988e8",
-                    "created": 63630107130,
-                    "id": "0684aa1e2785d62c76ce27d2451a1c26",
-                    "name": "Porting 202.555.9000",
-                    "numbers": {
-                        "+12025559000": {}
-                    },
-                    "port_state": "canceled",
-                    "sent": false,
-                    "updated": 63630120578,
-                    "uploads": {
-                        "file.pdf": {
-                            "content_type": "application/pdf",
-                            "length": 90931
-                        }
-                    }
-                }
-            ]
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "start_key": [
-        "009afc511c97b2ae693c6cc4920988e8",
-        "canceled",
-        63630129922
-    ],
-    "status": "success"
-}
-```
-
-
-#### List port requests of self and sub accounts
+#### List port requests of sub-accounts
 
 > GET /v2/accounts/{ACCOUNT_ID}/descendants/port_requests
 
@@ -533,76 +295,12 @@ curl -v -X GET \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/descendants/port_requests
 ```
 
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [],
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
+Response is same as [listing for agent](#list-port-requests-that-are-managed-by-you).
 
 
-#### Get port request for account and descendants
+## Port request management
 
-> GET /v2/accounts/{ACCOUNT_ID}/descendants/port_requests
-
-```shell
-curl -v -X GET \
-    -H "X-Auth-Token: {AUTH_TOKEN}" \
-    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/descendants/port_requests?by_number={PHONE_NUMBER}
-```
-
-```json
-{
-    "auth_token": "{AUTH_TOKEN}",
-    "data": [
-        {
-            "bill": {
-                "address": "116, natoma street",
-                "locality": "San Francisco",
-                "name": "John Doe",
-                "postal_code": "95109",
-                "region": "Ca"
-            },
-            "carrier": "PACIFIC BELL",
-            "created": 63597642009,
-            "id": "84e0a824c6b74fe1e3ec48962a600ef2",
-            "name": "Port request test",
-            "notifications": {
-                "email": {
-                    "send_to": "someone@2600hz.com"
-                }
-            },
-            "numbers": {
-                "{PHONE_NUMBER}": {}
-            },
-            "port_state": "submitted",
-            "sent": false,
-            "transfer_date": 63598114800,
-            "updated": 63597642011,
-            "uploads": {
-                "bill.pdf": {
-                    "content_type": "application/pdf",
-                    "length": 8304
-                },
-                "loa.pdf": {
-                    "content_type": "application/pdf",
-                    "length": 59196
-                }
-            }
-        }
-    ],
-    "page_size": 1,
-    "request_id": "{REQUEST_ID}",
-    "revision": "{REVISION}",
-    "status": "success"
-}
-```
-
-
-#### Create a new port request
+### Create a new port request
 
 > PUT /v2/accounts/{ACCOUNT_ID}/port_requests
 
@@ -613,8 +311,10 @@ curl -v -X PUT \
     -d '{"data":{"numbers":{"{PHONE_NUMBER}":{}}, "name":"{PORT_REQUEST_NAME}"}}' \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests
 ```
+<details>
+<summary>Responses</summary>
 
-##### Success
+#### Success
 
 ```json
 {
@@ -625,7 +325,12 @@ curl -v -X PUT \
         "numbers": {
             "{PHONE_NUMBER}": {}
         },
-        "port_state": "unconfirmed"
+        "port_state": "unconfirmed",
+        "uploads": {},
+        "_read_only": {
+            "port_authority": "{PORT_AUTHORITY_ACCOUNT_ID}"
+            "port_authority_name": "{PORT_AUTHORITY_ACCOUNT_NAME}"
+        }
     },
     "request_id": "{REQUEST_ID}",
     "revision": "{REVISION}",
@@ -633,7 +338,7 @@ curl -v -X PUT \
 }
 ```
 
-##### Failure: a port already exists for this number
+#### Failure: a port already exists for this number
 
 ```json
 {
@@ -653,7 +358,7 @@ curl -v -X PUT \
 }
 ```
 
-##### Failure: an account already owns this number
+#### Failure: an account already owns this number
 
 ```json
 {
@@ -672,9 +377,10 @@ curl -v -X PUT \
     "status": "error"
 }
 ```
+</details>
 
 
-#### Get port request details
+### Get port request details
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 
@@ -683,6 +389,9 @@ curl -v -X GET \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 ```
+
+<details>
+<summary>Sample Response</summary>
 
 ```json
 {
@@ -697,16 +406,21 @@ curl -v -X GET \
         "port_state": "unconfirmed",
         "sent": false,
         "updated": 63630097779,
-        "uploads": {}
+        "uploads": {},
+        "_read_only": {
+            "port_authority": "{PORT_AUTHORITY_ACCOUNT_ID}"
+            "port_authority_name": "{PORT_AUTHORITY_ACCOUNT_NAME}"
+        }
     },
     "request_id": "{REQUEST_ID}",
     "revision": "{REVISION}",
     "status": "success"
 }
 ```
+</details>
 
 
-#### Edit a port request
+### Edit a port request
 
 > POST /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 
@@ -717,6 +431,9 @@ curl -v -X POST \
     -d '{"data":{"numbers":{"{PHONE_NUMBER}":{"state":"NY"}}, "name": "{PORT_REQUEST_NAME}"}}' \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 ```
+
+<details>
+<summary>Sample Response</summary>
 
 ```json
 {
@@ -733,14 +450,20 @@ curl -v -X POST \
         "port_state": "unconfirmed",
         "sent": false,
         "updated": 63630104652,
-        "uploads": {}
+        "uploads": {},
+        "_read_only": {
+            "port_authority": "{PORT_AUTHORITY_ACCOUNT_ID}"
+            "port_authority_name": "{PORT_AUTHORITY_ACCOUNT_NAME}"
+        }
     },
     "request_id": "{REQUEST_ID}",
     "revision": "{REVISION}",
     "status": "success"
 }
 ```
-## Patch a port request
+</details>
+
+### Patch a port request
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 
@@ -750,6 +473,9 @@ curl -v -X PATCH \
     -d '{"data":{"your_custom_info":{"carrier_port_id": "apc-8535937-gtk123", "carrier_name": "ace phone co"}}' \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 ```
+
+<details>
+<summary>Sample Response</summary>
 
 ```json
 {
@@ -770,12 +496,17 @@ curl -v -X PATCH \
         "your_custom_info": {
             "carrier_port_id": "apc-8535937-gtk123",
             "carrier_name": "ace phone co"
+        },
+        "_read_only": {
+            "port_authority": "{PORT_AUTHORITY_ACCOUNT_ID}"
+            "port_authority_name": "{PORT_AUTHORITY_ACCOUNT_NAME}"
         }
     }
 }
 ```
+</details>
 
-#### DELETE a port request
+### DELETE a port request
 
 > DELETE /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 
@@ -784,6 +515,9 @@ curl -v -X DELETE \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}
 ```
+
+<details>
+<summary>Sample Response</summary>
 
 ```json
 {
@@ -796,16 +530,21 @@ curl -v -X DELETE \
                 "state": "NY"
             }
         },
-        "port_state": "unconfirmed"
+        "port_state": "unconfirmed",
+        "_read_only": {
+            "port_authority": "{PORT_AUTHORITY_ACCOUNT_ID}"
+            "port_authority_name": "{PORT_AUTHORITY_ACCOUNT_NAME}"
+        }
     },
     "request_id": "{REQUEST_ID}",
     "revision": "{REVISION}",
     "status": "success"
 }
 ```
+</details>
 
 
-#### List attachments on a port request
+## List attachments on a port request
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/attachments
 
@@ -814,6 +553,9 @@ curl -v -X GET \
     -H "X-Auth-Token: {AUTH_TOKEN}" \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/attachments
 ```
+
+<details>
+<summary>Sample Response</summary>
 
 ```json
 {
@@ -833,9 +575,10 @@ curl -v -X GET \
     "status": "success"
 }
 ```
+</details>
 
 
-#### Add an attachment to a port request
+## Add an attachment to a port request
 
 Note: if `ATTACHMENT_ID` does not end with `.pdf` the extension will be appended.
 
@@ -860,7 +603,7 @@ curl -v -X PUT \
 ```
 
 
-#### Get an attachment from a port request
+## Get an attachment from a port request
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/attachments/{ATTACHMENT_ID}
 
@@ -874,7 +617,7 @@ curl -v -X GET \
 Streams back the contents of the PDF file `{ATTACHMENT_ID}`.
 
 
-#### Replace an attachment on a port request
+## Replace an attachment on a port request
 
 > POST /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/attachments/{ATTACHMENT_ID}
 
@@ -897,7 +640,7 @@ curl -v -X POST \
 ```
 
 
-#### Delete an attachment on a port request
+## Delete an attachment on a port request
 
 > DELETE /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/attachments/{ATTACHMENT_ID}
 
@@ -917,7 +660,7 @@ curl -v -X DELETE \
 }
 ```
 
-#### Listing all port requests by their last transition to the `submitted` state
+## Listing all port requests by their last transition to the `submitted` state
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/last_submitted
 
@@ -965,7 +708,7 @@ curl -v -X GET \
 ```
 
 
-#### Listing transitions and comments
+## Listing transitions and comments
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/timeline
 
@@ -1003,14 +746,18 @@ curl -v -X GET \
             "type": "transition"
         },
         {
-            "content": "the previous comment was private, this one is not",
-            "superduper_comment": false,
+            "account_id": "0d46906ff1eb36bff4d09b5b32fc14be",
+            "action_required": true
+            "content": "the comment is private, and user is required to make an action port request",
+            "is_private": true,
             "timestamp": 63664000760,
             "user_id": "0d46906ff1eb36bff4d09b5b32fc14be"
         },
         {
+            "account_id": "0d46906ff1eb36bff4d09b5b32fc14be",
             "content": "this is not private",
-            "superduper_comment": false,
+            "action_required": false
+            "is_private": false,
             "timestamp": 63664000768,
             "user_id": "0d46906ff1eb36bff4d09b5b32fc14be"
         },
@@ -1045,7 +792,7 @@ curl -v -X GET \
 ```
 
 
-### Updating a port request's status
+## Updating a port request's status
 
 When PATCHing a port request a reason can be added to the transition with the following request value:
 * `reason`: an optional string that can be used to describe the reason for the transition
@@ -1054,7 +801,7 @@ This information will then be available in the timeline.
 
 Note: request values can be set either in the query string or in the data payload.
 
-#### Indicate a port is ready to be processed
+### Indicate a port is ready to be processed
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/submitted
 
@@ -1064,7 +811,7 @@ curl -v -X PATCH \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/submitted?reason=this+was+approved+by+Jane+Doe
 ```
 
-##### Success
+#### Success
 
 ```json
 {
@@ -1092,7 +839,7 @@ curl -v -X PATCH \
 }
 ```
 
-###### Failure: charges have to be accepted
+#### Failure: charges have to be accepted
 
 ```json
 {
@@ -1113,7 +860,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Put port in pending
+### Put port in pending
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/pending
 
@@ -1123,7 +870,7 @@ curl -v -X PATCH \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/pending
 ```
 
-##### Success
+#### Success
 
 ```json
 {
@@ -1151,7 +898,7 @@ curl -v -X PATCH \
 }
 ```
 
-##### Failure: target state illegal given current state
+#### Failure: target state illegal given current state
 
 ```json
 {
@@ -1172,7 +919,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Put port in progress (sent to losing carrier)
+### Put port in progress (sent to losing carrier)
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/scheduled
 
@@ -1218,7 +965,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Complete port, numbers will activate in the system, account will be billed
+### Complete port, numbers will activate in the system, account will be billed
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/completed
 
@@ -1255,7 +1002,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Reject a port
+### Reject a port
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/rejected
 
@@ -1292,7 +1039,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Cancel a port
+### Cancel a port
 
 > PATCH /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/canceled
 
@@ -1329,7 +1076,7 @@ curl -v -X PATCH \
 ```
 
 
-#### Build an LOA PDF from a port request
+## Build an LOA PDF from a port request
 
 > GET /v2/accounts/{ACCOUNT_ID}/port_requests/{PORT_REQUEST_ID}/loa
 
