@@ -321,7 +321,7 @@ finish_req(_, 'undefined', _) ->
 finish_req(Context, {<<"port_requests">>, [PortReqId]}, ?HTTP_PUT) ->
     cb_port_requests:send_port_comment_notifications(Context, PortReqId);
 finish_req(Context, {<<"port_requests">>, [PortReqId]}, ?HTTP_POST) ->
-    send_port_comment_notification(Context, PortReqId);
+    cb_port_requests:send_port_comment_notifications(Context, PortReqId);
 finish_req(_Context, _Type, _Verb) -> 'ok'.
 
 %%------------------------------------------------------------------------------
@@ -416,25 +416,6 @@ id_to_number(Id) -> kz_term:to_integer(Id) + 1.
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec send_port_comment_notification(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
-send_port_comment_notification(Context, PortReqId) ->
-    Props = [{<<"user_id">>, cb_context:auth_user_id(Context)}
-            ,{<<"account_id">>, cb_context:auth_account_id(Context)}
-            ],
-    Comment = kz_json:set_values(Props, lists:last(kz_json:get_value(?COMMENTS, cb_context:req_data(Context), []))),
-
-    Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
-          ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
-          ,{<<"Port-Request-ID">>, PortReqId}
-          ,{<<"Comment">>, Comment}
-          ,{<<"Version">>, cb_context:api_version(Context)}
-           | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-          ],
-    lager:debug("sending port request notification for new comment by user ~s in account ~s"
-               ,[cb_context:auth_user_id(Context), cb_context:auth_account_id(Context)]
-               ),
-    kapps_notify_publisher:cast(Req, fun kapi_notifications:publish_port_comment/1).
-
 -spec sort(kz_json:objects()) -> boolean().
 sort(Comments) ->
     lists:sort(fun sort_fun/2, Comments).

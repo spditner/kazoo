@@ -27,7 +27,7 @@
         ,set_port_authority/1
         ,validate_comments/2
         ,filter_private_comments/2
-        ,send_port_comment_notifications/3
+        ,send_port_comment_notifications/2
         ]).
 
 -include("crossbar.hrl").
@@ -476,7 +476,7 @@ save_then_maybe_notify(Context, PortId, NewState) ->
         'false' -> Context1;
         'true' ->
             Doc = cb_context:doc(Context1),
-            send_port_comment_notifications(Context1, PortId, get_new_comments(Context1)),
+            send_port_comment_notifications(Context1, PortId),
             RespData = filter_private_comments(Context1, knm_port_request:public_fields(Doc)),
             Context2 = cb_context:set_resp_data(Context1, RespData),
             port_state_change_notify(Context2, PortId, NewState)
@@ -1370,6 +1370,10 @@ get_new_comments(Context) ->
                         kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime
             ]
     end.
+
+-spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
+send_port_comment_notifications(Context, Id) ->
+    send_port_comment_notifications(Context, Id, get_new_comments(Context)).
 
 -spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> 'ok'.
 send_port_comment_notifications(Context, Id, Comments) ->
