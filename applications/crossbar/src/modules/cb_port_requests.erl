@@ -432,7 +432,7 @@ delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
 save(Context) ->
     NewDoc1 = maybe_set_scheduled_date_from_schedule_on(cb_context:doc(Context)),
     NewDoc = kzd_accounts:set_tree(NewDoc1, kzd_accounts:tree(cb_context:account_doc(Context))),
-    NewerDoc = kz_json:delete_key(<<"reason">>, NewDoc),
+    NewerDoc = kz_json:delete_keys([<<"reason">> | knm_port_request:public_fields()], NewDoc),
     Context1 = cb_context:setters(Context
                                  ,[{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
                                   ,{fun cb_context:set_doc/2, NewerDoc}

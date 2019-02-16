@@ -7,6 +7,7 @@
 -module(knm_port_request).
 
 -export([current_state/1
+        ,public_fields/0
         ,public_fields/1
         ,get/1
         ,new/2
@@ -64,6 +65,17 @@ current_state(JObj) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
+-spec public_fields() -> kz_term:ne_binaries().
+public_fields() ->
+    [<<"id">>
+    ,<<"created">>
+    ,<<"updated">>
+    ,<<"uploads">>
+    ,<<"port_state">>
+    ,<<"sent">>
+    ,<<"_read_only">>
+    ].
+
 -spec public_fields(kz_json:object()) -> kz_json:object().
 public_fields(JObj) ->
     As = kz_doc:attachments(JObj, kz_json:new()),
@@ -305,7 +317,7 @@ successful_transition(JObj, FromState, ToState, Metadata) ->
     Values = [{?PORT_PVT_STATE, ToState}
              ,{?PORT_PVT_TRANSITIONS, NewTransitions}
              ],
-    kz_json:set_values(Values, JObj).
+    kz_json:set_values(Values, kz_json:delete_keys(public_fields(), JObj)).
 
 -spec transition_metadata_jobj(kz_term:api_ne_binary(), kz_term:ne_binary(), transition_metadata()) -> kz_json:object().
 transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
