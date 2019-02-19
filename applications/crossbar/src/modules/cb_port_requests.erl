@@ -103,7 +103,7 @@ authorize(Context) ->
 authorize(Context, [{<<"port_requests">>, []}], ?HTTP_GET) ->
     C1 = set_port_authority(Context),
     case cb_context:fetch(C1, 'is_port_authority', 'false')
-         orelse cb_context:is_superduper_admin(C1)
+        orelse cb_context:is_superduper_admin(C1)
     of
         'true' -> {'true', C1};
         'false' ->
