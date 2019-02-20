@@ -7,14 +7,18 @@
 
 -export([new/0]).
 -export([bill/1, bill/2, set_bill/2]).
+-export([bill_account_number/1, bill_account_number/2, set_bill_account_number/2]).
+-export([bill_btn/1, bill_btn/2, set_bill_btn/2]).
 -export([bill_carrier/1, bill_carrier/2, set_bill_carrier/2]).
--export([bill_extended_address/1, bill_extended_address/2, set_bill_extended_address/2]).
 -export([bill_locality/1, bill_locality/2, set_bill_locality/2]).
 -export([bill_name/1, bill_name/2, set_bill_name/2]).
+-export([bill_pin/1, bill_pin/2, set_bill_pin/2]).
 -export([bill_postal_code/1, bill_postal_code/2, set_bill_postal_code/2]).
 -export([bill_region/1, bill_region/2, set_bill_region/2]).
 -export([bill_street_address/1, bill_street_address/2, set_bill_street_address/2]).
 -export([bill_street_number/1, bill_street_number/2, set_bill_street_number/2]).
+-export([bill_street_post_dir/1, bill_street_post_dir/2, set_bill_street_post_dir/2]).
+-export([bill_street_pre_dir/1, bill_street_pre_dir/2, set_bill_street_pre_dir/2]).
 -export([bill_street_type/1, bill_street_type/2, set_bill_street_type/2]).
 -export([comments/1, comments/2, set_comments/2]).
 -export([name/1, name/2, set_name/2]).
@@ -22,10 +26,12 @@
 -export([notifications_email/1, notifications_email/2, set_notifications_email/2]).
 -export([notifications_email_send_to/1, notifications_email_send_to/2, set_notifications_email_send_to/2]).
 -export([numbers/1, numbers/2, set_numbers/2]).
+-export([number/2, number/3, set_number/3]).
 -export([reference_number/1, reference_number/2, set_reference_number/2]).
 -export([signee_name/1, signee_name/2, set_signee_name/2]).
 -export([signing_date/1, signing_date/2, set_signing_date/2]).
 -export([transfer_date/1, transfer_date/2, set_transfer_date/2]).
+-export([winning_carrier/1, winning_carrier/2, set_winning_carrier/2]).
 
 %% Private fields
 -export([pvt_account_name/1, pvt_account_name/2, set_pvt_account_name/2]).
@@ -64,6 +70,30 @@ bill(Doc, Default) ->
 set_bill(Doc, Bill) ->
     kz_json:set_value([<<"bill">>], Bill, Doc).
 
+-spec bill_account_number(doc()) -> kz_term:api_binary().
+bill_account_number(Doc) ->
+    bill_account_number(Doc, 'undefined').
+
+-spec bill_account_number(doc(), Default) -> binary() | Default.
+bill_account_number(Doc, Default) ->
+    kz_json:get_binary_value([<<"bill">>, <<"account_number">>], Doc, Default).
+
+-spec set_bill_account_number(doc(), binary()) -> doc().
+set_bill_account_number(Doc, BillAccountNumber) ->
+    kz_json:set_value([<<"bill">>, <<"account_number">>], BillAccountNumber, Doc).
+
+-spec bill_btn(doc()) -> kz_term:api_binary().
+bill_btn(Doc) ->
+    bill_btn(Doc, 'undefined').
+
+-spec bill_btn(doc(), Default) -> binary() | Default.
+bill_btn(Doc, Default) ->
+    kz_json:get_binary_value([<<"bill">>, <<"btn">>], Doc, Default).
+
+-spec set_bill_btn(doc(), binary()) -> doc().
+set_bill_btn(Doc, BillBtn) ->
+    kz_json:set_value([<<"bill">>, <<"btn">>], BillBtn, Doc).
+
 -spec bill_carrier(doc()) -> kz_term:api_binary().
 bill_carrier(Doc) ->
     bill_carrier(Doc, 'undefined').
@@ -75,18 +105,6 @@ bill_carrier(Doc, Default) ->
 -spec set_bill_carrier(doc(), binary()) -> doc().
 set_bill_carrier(Doc, BillCarrier) ->
     kz_json:set_value([<<"bill">>, <<"carrier">>], BillCarrier, Doc).
-
--spec bill_extended_address(doc()) -> kz_term:api_binary().
-bill_extended_address(Doc) ->
-    bill_extended_address(Doc, 'undefined').
-
--spec bill_extended_address(doc(), Default) -> binary() | Default.
-bill_extended_address(Doc, Default) ->
-    kz_json:get_binary_value([<<"bill">>, <<"extended_address">>], Doc, Default).
-
--spec set_bill_extended_address(doc(), binary()) -> doc().
-set_bill_extended_address(Doc, BillExtendedAddress) ->
-    kz_json:set_value([<<"bill">>, <<"extended_address">>], BillExtendedAddress, Doc).
 
 -spec bill_locality(doc()) -> kz_term:api_binary().
 bill_locality(Doc) ->
@@ -111,6 +129,18 @@ bill_name(Doc, Default) ->
 -spec set_bill_name(doc(), binary()) -> doc().
 set_bill_name(Doc, BillName) ->
     kz_json:set_value([<<"bill">>, <<"name">>], BillName, Doc).
+
+-spec bill_pin(doc()) -> kz_term:api_binary().
+bill_pin(Doc) ->
+    bill_pin(Doc, 'undefined').
+
+-spec bill_pin(doc(), Default) -> binary() | Default.
+bill_pin(Doc, Default) ->
+    kz_json:get_binary_value([<<"bill">>, <<"pin">>], Doc, Default).
+
+-spec set_bill_pin(doc(), binary()) -> doc().
+set_bill_pin(Doc, BillPin) ->
+    kz_json:set_value([<<"bill">>, <<"pin">>], BillPin, Doc).
 
 -spec bill_postal_code(doc()) -> kz_term:api_binary().
 bill_postal_code(Doc) ->
@@ -159,6 +189,30 @@ bill_street_number(Doc, Default) ->
 -spec set_bill_street_number(doc(), binary()) -> doc().
 set_bill_street_number(Doc, BillStreetNumber) ->
     kz_json:set_value([<<"bill">>, <<"street_number">>], BillStreetNumber, Doc).
+
+-spec bill_street_post_dir(doc()) -> kz_term:api_binary().
+bill_street_post_dir(Doc) ->
+    bill_street_post_dir(Doc, 'undefined').
+
+-spec bill_street_post_dir(doc(), Default) -> binary() | Default.
+bill_street_post_dir(Doc, Default) ->
+    kz_json:get_binary_value([<<"bill">>, <<"street_post_dir">>], Doc, Default).
+
+-spec set_bill_street_post_dir(doc(), binary()) -> doc().
+set_bill_street_post_dir(Doc, BillStreetPostDir) ->
+    kz_json:set_value([<<"bill">>, <<"street_post_dir">>], BillStreetPostDir, Doc).
+
+-spec bill_street_pre_dir(doc()) -> kz_term:api_binary().
+bill_street_pre_dir(Doc) ->
+    bill_street_pre_dir(Doc, 'undefined').
+
+-spec bill_street_pre_dir(doc(), Default) -> binary() | Default.
+bill_street_pre_dir(Doc, Default) ->
+    kz_json:get_binary_value([<<"bill">>, <<"street_pre_dir">>], Doc, Default).
+
+-spec set_bill_street_pre_dir(doc(), binary()) -> doc().
+set_bill_street_pre_dir(Doc, BillStreetPreDir) ->
+    kz_json:set_value([<<"bill">>, <<"street_pre_dir">>], BillStreetPreDir, Doc).
 
 -spec bill_street_type(doc()) -> kz_term:api_binary().
 bill_street_type(Doc) ->
@@ -244,15 +298,27 @@ numbers(Doc, Default) ->
 set_numbers(Doc, Numbers) ->
     kz_json:set_value([<<"numbers">>], Numbers, Doc).
 
--spec reference_number(doc()) -> kz_term:api_ne_binary().
+-spec number(doc(), kz_json:key()) -> kz_term:api_object().
+number(Doc, Number) ->
+    number(Doc, Number, 'undefined').
+
+-spec number(doc(), kz_json:key(), Default) -> kz_json:object() | Default.
+number(Doc, Number, Default) ->
+    kz_json:get_json_value([<<"numbers">>, Number], Doc, Default).
+
+-spec set_number(doc(), kz_json:key(), kz_json:object()) -> doc().
+set_number(Doc, Number, Value) ->
+    kz_json:set_value([<<"numbers">>, Number], Value, Doc).
+
+-spec reference_number(doc()) -> kz_term:api_binary().
 reference_number(Doc) ->
     reference_number(Doc, 'undefined').
 
--spec reference_number(doc(), Default) -> kz_term:ne_binary() | Default.
+-spec reference_number(doc(), Default) -> binary() | Default.
 reference_number(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"reference_number">>], Doc, Default).
+    kz_json:get_binary_value([<<"reference_number">>], Doc, Default).
 
--spec set_reference_number(doc(), kz_term:api_binary()) -> doc().
+-spec set_reference_number(doc(), binary()) -> doc().
 set_reference_number(Doc, ReferenceNumber) ->
     kz_json:set_value([<<"reference_number">>], ReferenceNumber, Doc).
 
@@ -291,6 +357,18 @@ transfer_date(Doc, Default) ->
 -spec set_transfer_date(doc(), integer()) -> doc().
 set_transfer_date(Doc, TransferDate) ->
     kz_json:set_value([<<"transfer_date">>], TransferDate, Doc).
+
+-spec winning_carrier(doc()) -> kz_term:api_binary().
+winning_carrier(Doc) ->
+    winning_carrier(Doc, 'undefined').
+
+-spec winning_carrier(doc(), Default) -> binary() | Default.
+winning_carrier(Doc, Default) ->
+    kz_json:get_binary_value([<<"winning_carrier">>], Doc, Default).
+
+-spec set_winning_carrier(doc(), binary()) -> doc().
+set_winning_carrier(Doc, WinningCarrier) ->
+    kz_json:set_value([<<"winning_carrier">>], WinningCarrier, Doc).
 
 %%------------------------------------------------------------------------------
 %% @doc

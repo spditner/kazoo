@@ -147,6 +147,10 @@
         "transfer_date": {
             "description": "Requested transfer date in Gregorian timestamp",
             "type": "integer"
+        },
+        "winning_carrier": {
+            "description": "The name of winning carrier",
+            "type": "string"
         }
     },
     "required": [
