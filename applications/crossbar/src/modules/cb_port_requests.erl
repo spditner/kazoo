@@ -1111,7 +1111,7 @@ can_update_port_request(_Context, ?PORT_REJECTED) ->
     'true';
 can_update_port_request(Context, _State) ->
     lager:debug("port is in ~s state, check if the requestor is superduper admin", [_State]),
-    cb_context:is_superduper_admin(cb_context:auth_account_id(Context)).
+    cb_context:is_superduper_admin(Context).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -1131,7 +1131,6 @@ successful_validation(Context, 'undefined') ->
 successful_validation(Context, _Id) ->
     Normalized = knm_port_request:normalize_numbers(cb_context:doc(Context)),
     cb_context:set_doc(Context, Normalized).
-
 
 -spec fetch_by_number(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 fetch_by_number(Context, Number) ->
@@ -1258,13 +1257,20 @@ maybe_move_state(Context, PortState) ->
                                                    ,cb_context:auth_user_id(Context)
                                                    ,cb_context:req_value(Context, ?REQ_TRANSITION)
                                                    ),
+    AllowedSubmitterState = is_submitter_move_state_allowed(Context, PortState),
     try cb_context:resp_status(Context) =:= 'success'
              andalso knm_port_request:maybe_transition(cb_context:doc(Context), Metadata, PortState)
     of
         'false' -> Context;
-        {'ok', PortRequest} ->
+        {'ok', PortRequest} when AllowedSubmitterState ->
             lager:debug("loaded new port request state ~s", [PortState]),
             cb_context:set_doc(Context, PortRequest);
+        {'ok', _} ->
+            Msg = kz_json:from_list(
+                    [{<<"message">>, <<"You're not allowed to move to new state from current state">>}
+                    ,{<<"cause">>, PortState}
+                    ]),
+            cb_context:add_validation_error(<<"port_state">>, <<"enum">>, Msg, Context);
         {'error', 'invalid_state_transition'} ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"Cannot move to new state from current state">>}
@@ -1278,6 +1284,18 @@ maybe_move_state(Context, PortState) ->
         'throw':{'error', 'failed_to_charge'} ->
             cb_context:add_system_error('no_credit', Context)
     end.
+
+-spec is_submitter_move_state_allowed(cb_context:context(), kz_term:ne_binary()) -> boolean().
+is_submitter_move_state_allowed(_, ?PORT_UNCONFIRMED) -> 'true';
+is_submitter_move_state_allowed(_, ?PORT_SUBMITTED) -> 'true';
+is_submitter_move_state_allowed(Context, ?PORT_CANCELED) ->
+    Doc = cb_context:doc(Context),
+    cb_context:fetch(Context, 'is_port_authority', 'false')
+        orelse cb_context:is_superduper_admin(Context)
+        orelse knm_port_request:current_state(Doc) =:= ?PORT_UNCONFIRMED;
+is_submitter_move_state_allowed(Context, _) ->
+    cb_context:fetch(Context, 'is_port_authority', 'false')
+        orelse cb_context:is_superduper_admin(Context).
 
 %%------------------------------------------------------------------------------
 %% @doc
