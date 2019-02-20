@@ -445,9 +445,9 @@ send_submitted_request(JObj) ->
 -spec migrate() -> 'ok'.
 migrate() ->
     kz_util:put_callid(<<"port_request_migration">>),
-    lager:debug("migrating port request documents, if necessary"),
-    migrate(<<>>, 10),
-    lager:debug("finished migrating port request documents").
+    ?SUP_LOG_DEBUG("migrating port request documents, if necessary"),
+    migrate(undefined, 50),
+    ?SUP_LOG_DEBUG("finished migrating port request documents").
 
 %%%=============================================================================
 %%% Internal functions
@@ -677,65 +677,129 @@ set_flag(JObj) ->
     end.
 
 
--spec migrate(binary(), pos_integer()) -> 'ok'.
+-spec migrate(any(), pos_integer()) -> 'ok'.
 migrate(StartKey, Limit) ->
+    ?SUP_LOG_DEBUG(":: getting next batch of ~b port requests starting with key ~1000p"
+                  ,[Limit, StartKey]
+                  ),
     {'ok', Docs} = fetch_docs(StartKey, Limit),
     try lists:split(Limit, Docs) of
         {Results, []} ->
-            migrate_docs(Results);
+            Migrated = migrate_docs(Results),
+            ?SUP_LOG_DEBUG("-- migrated ~b port requests", Migrated);
         {Results, [NextResult]} ->
-            migrate_docs(Results),
-            lager:debug("migrated batch of ~p port requests", [Limit]),
+            Migrated = migrate_docs(Results),
+            ?SUP_LOG_DEBUG("-- migrated ~b port requests", [Migrated]),
             timer:sleep(5000),
             migrate(kz_json:get_value(<<"key">>, NextResult), Limit)
     catch
         'error':'badarg' ->
-            migrate_docs(Docs)
+            Migrated = migrate_docs(Docs),
+            ?SUP_LOG_DEBUG("-- migrated ~b port requests", [Migrated])
     end.
 
--spec migrate_docs(kz_json:objects()) -> 'ok'.
-migrate_docs([]) -> 'ok';
+-spec migrate_docs(kz_json:objects()) -> integer().
+migrate_docs([]) -> 0;
 migrate_docs(Docs) ->
-    case prepare_docs_for_migrate(Docs) of
-        [] -> 'ok';
+    case [UpdatedDoc || Doc <- Docs,
+                        {UpdatedDoc, 'true'} <- [migrate_doc(kz_json:get_value(<<"doc">>, Doc))]
+         ]
+    of
+        [] -> 0;
         UpdatedDocs ->
             {'ok', _} = kz_datamgr:save_docs(?KZ_PORT_REQUESTS_DB, UpdatedDocs),
-            'ok'
+            length(UpdatedDocs)
     end.
 
--spec prepare_docs_for_migrate(kz_json:objects()) -> kz_json:objects().
-prepare_docs_for_migrate(Docs) ->
-    [UpdatedDoc || Doc <- Docs,
-                   (UpdatedDoc = migrate_doc(kz_json:get_value(<<"doc">>, Doc)))
-                       =/= 'undefined'
-    ].
-
--spec migrate_doc(kz_json:object()) -> kz_term:api_object().
+-spec migrate_doc(kz_json:object()) -> {kz_json:object(), boolean()}.
 migrate_doc(PortRequest) ->
+    MigrateFuns = [fun add_pvt_tree/1
+                  ,fun add_pvt_port_authority/1
+                  ,fun add_pvt_account_name/1
+                  ,fun rename_superduper_comment/1
+                  ],
+    lists:foldl(fun migrate_doc/2, {PortRequest, 'false'}, MigrateFuns).
+
+-spec migrate_doc(fun((kz_json:object()) -> kz_term:api_object()), {kz_json:object(), boolean()}) ->
+                         {kz_json:object(), boolean()}.
+migrate_doc(Fun, {Doc, IsUpdated}) ->
+    case Fun(Doc) of
+        'undefined' -> {Doc, IsUpdated};
+        NewDoc -> {NewDoc, 'true'}
+    end.
+
+-spec add_pvt_tree(kz_json:object()) -> kz_term:api_object().
+add_pvt_tree(PortRequest) ->
+    AccountId = kz_doc:account_id(PortRequest),
     case kz_json:get_value(?PORT_PVT_TREE, PortRequest) of
-        'undefined' -> update_doc(PortRequest);
+        'undefined' ->
+            {'ok', AccountDoc} = kzd_accounts:fetch(AccountId),
+            kz_json:set_value(?PORT_PVT_TREE, kzd_accounts:tree(AccountDoc), PortRequest);
         _Tree -> 'undefined'
     end.
 
--spec update_doc(kz_json:object()) -> kz_term:api_object().
-update_doc(PortRequest) ->
-    update_doc(PortRequest, kz_doc:account_id(PortRequest)).
+-spec add_pvt_port_authority(kz_json:object()) -> kz_term:api_object().
+add_pvt_port_authority(PortRequest) ->
+    AccountId = kz_doc:account_id(PortRequest),
+    case kzd_port_requests:port_authority(PortRequest) == 'undefined'
+         orelse kzd_port_requests:port_authority_name(PortRequest) == 'undefined'
+    of
+        'true' ->
+            case kzd_port_requests:find_port_authority(AccountId) of
+                'undefined' -> 'undefined';
+                AuthorityId ->
+                    Setters = [{fun kzd_port_requests:set_port_authority/2, AuthorityId}
+                              ,{fun kzd_port_requests:set_port_authority_name/2
+                               ,kzd_accounts:fetch_name(AuthorityId)
+                               }
+                              ],
+                    kz_doc:setters(PortRequest, Setters)
+            end;
+        'false' ->
+            'undefined'
+    end.
 
--spec update_doc(kz_json:object(), kz_term:api_binary()) -> kz_term:api_object().
-update_doc(_Doc, 'undefined') ->
-    lager:debug("no account id in doc ~s", [kz_doc:id(_Doc)]),
-    'undefined';
-update_doc(PortRequest, AccountId) ->
-    {'ok', AccountDoc} = kzd_accounts:fetch(AccountId),
-    kz_json:set_value(?PORT_PVT_TREE, kzd_accounts:tree(AccountDoc), PortRequest).
+-spec add_pvt_account_name(kz_json:object()) -> kz_term:api_object().
+add_pvt_account_name(PortRequest) ->
+    AccountId = kz_doc:account_id(PortRequest),
+    case kz_json:get_value(<<"pvt_account_name">>, PortRequest) of
+        'undefined' ->
+            kz_json:set_value(<<"pvt_account_name">>, kzd_accounts:fetch_name(AccountId), PortRequest);
+        _Tree -> 'undefined'
+    end.
 
--spec fetch_docs(binary(), pos_integer()) -> {'ok', kz_json:objects()}.
+-spec rename_superduper_comment(kz_json:object()) -> kz_term:api_object().
+rename_superduper_comment(PortRequest) ->
+    Comments = kz_json:get_list_value(<<"comments">>, PortRequest, []),
+    case lists:foldl(fun rename_to_is_private/2, {[], 'false'}, Comments) of
+        {_, 'false'} -> 'undefined';
+        {Updated, 'true'} ->
+            kz_json:set_value(<<"comments">>, lists:reverse(Updated), PortRequest)
+    end.
+
+rename_to_is_private(Comment, {Acc, IsUpdated}) ->
+    case kz_json:get_value(<<"superduper_comment">>, Comment) of
+        'undefined' -> {[Comment | Acc], IsUpdated};
+        Boolean ->
+            {[kz_json:set_value(<<"is_private">>
+                               ,Boolean
+                               ,kz_json:delete_key(<<"superduper_comment">>, Comment)
+                               )
+              | Acc
+             ]
+            ,'true'
+            }
+    end.
+
+-spec fetch_docs(any(), pos_integer()) -> {'ok', kz_json:objects()}.
 fetch_docs(StartKey, Limit) ->
-    ViewOptions = [{'startkey', StartKey}
-                  ,{'limit', Limit + 1}
-                  ,'include_docs'
-                  ],
-    kz_datamgr:all_docs(?KZ_PORT_REQUESTS_DB, ViewOptions).
+    ViewOptions = props:filter_undefined(
+                    [{'startkey', StartKey}
+                    ,{'limit', Limit + 1}
+                    ,'include_docs'
+                    ]
+                   ),
+    kz_datamgr:get_results(?KZ_PORT_REQUESTS_DB, <<"port_requests/listing_by_state">>,  ViewOptions).
 
 -spec save_doc(kz_json:object()) -> {'ok', kz_json:object()} |
                                     {'error', any()}.
