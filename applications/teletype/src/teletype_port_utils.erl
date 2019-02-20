@@ -83,7 +83,7 @@ get_numbers(PortReqJObj) ->
         ?PORT_COMPLETED ->
             %% in case the doc is not saved/replicated yet, use numbers key
             Default = kzd_port_requests:numbers(PortReqJObj, kz_json:new()),
-            kzd_port_requests:ported_numbers(PortReqJObj, Default);
+            kzd_port_requests:pvt_ported_numbers(PortReqJObj, Default);
         _ ->
             kzd_port_requests:numbers(PortReqJObj, kz_json:new())
     end.

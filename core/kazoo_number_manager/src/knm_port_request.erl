@@ -97,6 +97,7 @@ read_only_public_fields(Doc) ->
              [{<<"account_name">>, kzd_port_requests:pvt_account_name(Doc)}
              ,{<<"port_authority">>, kzd_port_requests:pvt_port_authority(Doc)}
              ,{<<"port_authority_name">>, kzd_port_requests:pvt_port_authority_name(Doc)}
+             ,{<<"ported_numbers">>, kzd_port_requests:pvt_ported_numbers(Doc)}
              ]
             ),
     case kz_json:is_empty(JObj) of
@@ -535,7 +536,7 @@ is_in_account_and_in_service(AccountId, PN) ->
 -spec clear_numbers_from_port(kz_json:object()) -> {ok, kz_json:object()}.
 clear_numbers_from_port(PortReq) ->
     Setters = [{fun kzd_port_requests:set_numbers/2, kz_json:new()}
-              ,{fun kzd_port_requests:set_ported_numbers/2, kzd_port_requests:numbers(PortReq)}
+              ,{fun kzd_port_requests:set_pvt_ported_numbers/2, kzd_port_requests:numbers(PortReq)}
               ],
     Cleared = kz_doc:setters(PortReq, Setters),
     case save_doc(Cleared) of

@@ -34,10 +34,6 @@
                     "description": "The zip/postal code of the billing address the losing carrier has on record",
                     "type": "string"
                 },
-                "reference_number": {
-                    "description": "Winning carrier reference number or order ID",
-                    "type": "string"
-                },
                 "region": {
                     "description": "The region (state) of the billing address the losing carrier has on record",
                     "type": "string"
@@ -135,6 +131,10 @@
                 }
             },
             "type": "object"
+        },
+        "reference_number": {
+            "description": "Winning carrier reference number or order ID",
+            "type": "string"
         },
         "signee_name": {
             "description": "The name of the person authorizing the release of numbers from the losing carrier",

@@ -17,7 +17,6 @@
 -export([bill_street_number/1, bill_street_number/2, set_bill_street_number/2]).
 -export([bill_street_type/1, bill_street_type/2, set_bill_street_type/2]).
 -export([comments/1, comments/2, set_comments/2]).
--export([ported_numbers/1, ported_numbers/2, set_ported_numbers/2]).
 -export([name/1, name/2, set_name/2]).
 -export([notifications/1, notifications/2, set_notifications/2]).
 -export([notifications_email/1, notifications_email/2, set_notifications_email/2]).
@@ -33,6 +32,7 @@
 -export([pvt_port_authority/1, pvt_port_authority/2, set_pvt_port_authority/2]).
 -export([pvt_port_authority_name/1, pvt_port_authority_name/2, set_pvt_port_authority_name/2]).
 -export([pvt_port_state/1, pvt_port_state/2, set_pvt_port_state/2]).
+-export([pvt_ported_numbers/1, pvt_ported_numbers/2, set_pvt_ported_numbers/2]).
 -export([pvt_sent/1, pvt_sent/2, set_pvt_sent/2]).
 -export([pvt_transitions/1, pvt_transitions/2, set_pvt_tranisitions/2]).
 
@@ -183,18 +183,6 @@ comments(Doc, Default) ->
 -spec set_comments(doc(), kz_json:objects()) -> doc().
 set_comments(Doc, Comments) ->
     kz_json:set_value([<<"comments">>], Comments, Doc).
-
--spec ported_numbers(doc()) -> kz_term:api_object().
-ported_numbers(Doc) ->
-    ported_numbers(Doc, 'undefined').
-
--spec ported_numbers(doc(), Default) -> kz_json:object() | Default.
-ported_numbers(Doc, Default) ->
-    kz_json:get_json_value([<<"ported_numbers">>], Doc, Default).
-
--spec set_ported_numbers(doc(), kz_json:object()) -> doc().
-set_ported_numbers(Doc, Numbers) ->
-    kz_json:set_value([<<"ported_numbers">>], Numbers, Doc).
 
 -spec name(doc()) -> kz_term:api_ne_binary().
 name(Doc) ->
@@ -367,6 +355,22 @@ pvt_port_state(Doc, Default) ->
 -spec set_pvt_port_state(doc(), kz_term:api_binary()) -> doc().
 set_pvt_port_state(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_state">>], PortAuthority, Doc).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_ported_numbers(doc()) -> kz_term:api_object().
+pvt_ported_numbers(Doc) ->
+    pvt_ported_numbers(Doc, 'undefined').
+
+-spec pvt_ported_numbers(doc(), Default) -> kz_json:object() | Default.
+pvt_ported_numbers(Doc, Default) ->
+    kz_json:get_json_value([<<"pvt_ported_numbers">>], Doc, Default).
+
+-spec set_pvt_ported_numbers(doc(), kz_json:object()) -> doc().
+set_pvt_ported_numbers(Doc, Numbers) ->
+    kz_json:set_value([<<"pvt_ported_numbers">>], Numbers, Doc).
 
 %%------------------------------------------------------------------------------
 %% @doc
