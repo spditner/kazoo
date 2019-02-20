@@ -294,7 +294,7 @@ check_port_suspended(PortRequest, Context) ->
     State = kzd_port_requests:pvt_port_state(PortRequest),
     Transition = kzd_port_requests:get_transition(PortRequest, State),
     case lists:member(State, ?PORT_SUSPENDED_STATES)
-         andalso Transition =/= []
+        andalso Transition =/= []
     of
         'false' -> Context;
         'true' ->
