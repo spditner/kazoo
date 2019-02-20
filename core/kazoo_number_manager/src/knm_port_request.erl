@@ -340,7 +340,7 @@ transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
       ]).
 
 -spec maybe_user(transition_metadata()) -> kz_term:proplist().
-maybe_user(#{auth_user_id := undefine}) -> [];
+maybe_user(#{auth_user_id := undefined}) -> [];
 maybe_user(#{auth_user_id := UserId
             ,user_first_name := OptionalFirstName
             ,user_last_name := OptionalLastName

@@ -27,9 +27,14 @@
 -export([signing_date/1, signing_date/2, set_signing_date/2]).
 -export([transfer_date/1, transfer_date/2, set_transfer_date/2]).
 
+%% Private fields
 -export([port_authority/1, port_authority/2, set_port_authority/2]).
-
 -export([port_authority_name/1, port_authority_name/2, set_port_authority_name/2]).
+-export([port_state/1, port_state/2, set_port_state/2]).
+-export([transitions/1, transitions/2, set_tranisitions/2]).
+
+%% Utilities
+-export([get_transition/2]).
 -export([find_port_authority/1]).
 
 
@@ -307,6 +312,38 @@ port_authority_name(Doc, Default) ->
 -spec set_port_authority_name(doc(), kz_term:api_binary()) -> doc().
 set_port_authority_name(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_authority_name">>], PortAuthority, Doc).
+
+-spec port_state(doc()) -> kz_term:api_ne_binary().
+port_state(Doc) ->
+    port_state(Doc, 'undefined').
+
+-spec port_state(doc(), Default) -> kz_term:api_ne_binary() | Default.
+port_state(Doc, Default) ->
+    kz_json:get_ne_binary_value([<<"pvt_port_state">>], Doc, Default).
+
+-spec set_port_state(doc(), kz_term:api_binary()) -> doc().
+set_port_state(Doc, PortAuthority) ->
+    kz_json:set_value([<<"pvt_port_state">>], PortAuthority, Doc).
+
+-spec transitions(doc()) -> kz_term:api_objects().
+transitions(Doc) ->
+    port_authority(Doc, 'undefined').
+
+-spec transitions(doc(), Default) -> kz_term:api_objects() | Default.
+transitions(Doc, Default) ->
+    kz_json:get_ne_json_value([<<"pvt_transitions">>], Doc, Default).
+
+-spec set_tranisitions(doc(), kz_term:api_objects()) -> doc().
+set_tranisitions(Doc, Transitions) ->
+    kz_json:set_value([<<"pvt_transitions">>], Transitions, Doc).
+
+-spec get_transition(doc(), kz_term:ne_binary()) -> kz_json:objects().
+get_transition(Doc, ToState) ->
+    ToStatePath = [<<"transition">>, <<"new">>],
+    [Transition
+     || Transition <- transitions(Doc, []),
+        kz_json:get_ne_binary_value(ToStatePath, Transition) =:= ToState
+    ].
 
 -spec find_port_authority(doc() | kz_term:api_ne_binary()) -> kz_term:api_ne_binary().
 find_port_authority(?NE_BINARY = AccountId) ->

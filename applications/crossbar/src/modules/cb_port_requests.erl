@@ -1002,8 +1002,8 @@ filter_private_comments(Context, JObj) ->
         orelse cb_context:is_superduper_admin(Context)
     of
         'false' ->
-            Comments = kz_json:get_list_value(<<"comments">>, JObj, []),
-            kz_json:set_value(<<"comments">>, run_comment_filter(Comments, Filters), JObj);
+            Comments = kzd_port_requests:comments(JObj, []),
+            kzd_port_requests:set_comments(JObj, run_comment_filter(Comments, Filters));
         'true'  -> JObj
     end.
 
