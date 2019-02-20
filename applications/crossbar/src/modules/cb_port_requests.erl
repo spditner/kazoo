@@ -650,16 +650,16 @@ get_commentor_info(Context, 'undefined') ->
 get_commentor_info(Context, AuthDoc) ->
     case kz_doc:type(AuthDoc) of
         <<"user">> ->
-              [{<<"account_id">>, cb_context:auth_account_id(Context)}
-              ,{<<"user_id">>, kz_doc:id(AuthDoc)}
-              ,{<<"first_name">>, kzd_users:first_name(AuthDoc)}
-              ,{<<"last_name">>, kzd_users:last_name(AuthDoc)}
-              ,{<<"author">>, kzd_users:full_name(AuthDoc)}
-              ];
+            [{<<"account_id">>, cb_context:auth_account_id(Context)}
+            ,{<<"user_id">>, kz_doc:id(AuthDoc)}
+            ,{<<"first_name">>, kzd_users:first_name(AuthDoc)}
+            ,{<<"last_name">>, kzd_users:last_name(AuthDoc)}
+            ,{<<"author">>, kzd_users:full_name(AuthDoc)}
+            ];
         _ ->
-              [{<<"account_id">>, cb_context:auth_account_id(Context)}
-              ,{<<"user_id">>, kz_json:get_value(<<"owner_id">>, AuthDoc)}
-              ]
+            [{<<"account_id">>, cb_context:auth_account_id(Context)}
+            ,{<<"user_id">>, kz_json:get_value(<<"owner_id">>, AuthDoc)}
+            ]
     end.
 
 -spec successful_comments_validation(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->

@@ -742,7 +742,7 @@ add_pvt_tree(PortRequest) ->
 add_pvt_port_authority(PortRequest) ->
     AccountId = kz_doc:account_id(PortRequest),
     case kzd_port_requests:port_authority(PortRequest) == 'undefined'
-         orelse kzd_port_requests:port_authority_name(PortRequest) == 'undefined'
+        orelse kzd_port_requests:port_authority_name(PortRequest) == 'undefined'
     of
         'true' ->
             case kzd_port_requests:find_port_authority(AccountId) of
