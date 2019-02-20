@@ -118,16 +118,16 @@ Key | Description | Type | Default | Required | Support Level
 Port request API URL path has specific meaning:
 
 * `/v2/port_requests`: List port requests that the authenticated account is port authority for.
-* `/v2/accounts/{ACCOUNT_ID}`: List only port request for a specific account.
-* `/v2/accounts/{ACCOUNT_ID}/descendants`: List all sub-accounts port requests.V
+* `/v2/accounts/{ACCOUNT_ID}/port_requests`: List only port request for a specific account.
+* `/v2/accounts/{ACCOUNT_ID}/descendants/port_requests`: List all sub-accounts port requests.
 
 ### List port requests by type
 
 You can issue GET requests to find all ports in a particular state.
 
-To do this add `by_types` query string to the request. If you don't set  `by_types`, by default `active` port request will be shown. Possible values are:
-
 All requests are not paginated, with the exception of the `completed` state. Use pagination toggles for date range as desired.
+
+To do this add `by_types` query string to the request. If you don't set  `by_types`, by default `active` port request will be shown. Possible values are:
 
 * `all`: Lists port requests in any state
 * `active`: Lists port requests which are in these states:
@@ -222,7 +222,7 @@ curl -v -X GET \
 
 ### List port requests that are managed by you
 
-This lists all port requests that you (authenticated account) are managing.
+This lists all port requests that you (authenticated account) are managing and port authority for.
 See [Port Authority](#port-authority-port-agent) for more details.
 
 > GET /v2/port_requests
