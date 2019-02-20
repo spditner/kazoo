@@ -17,21 +17,24 @@
 -export([bill_street_number/1, bill_street_number/2, set_bill_street_number/2]).
 -export([bill_street_type/1, bill_street_type/2, set_bill_street_type/2]).
 -export([comments/1, comments/2, set_comments/2]).
+-export([ported_numbers/1, ported_numbers/2, set_ported_numbers/2]).
 -export([name/1, name/2, set_name/2]).
 -export([notifications/1, notifications/2, set_notifications/2]).
 -export([notifications_email/1, notifications_email/2, set_notifications_email/2]).
 -export([notifications_email_send_to/1, notifications_email_send_to/2, set_notifications_email_send_to/2]).
 -export([numbers/1, numbers/2, set_numbers/2]).
--export([number/2, number/3, set_number/3]).
+-export([reference_number/1, reference_number/2, set_reference_number/2]).
 -export([signee_name/1, signee_name/2, set_signee_name/2]).
 -export([signing_date/1, signing_date/2, set_signing_date/2]).
 -export([transfer_date/1, transfer_date/2, set_transfer_date/2]).
 
 %% Private fields
--export([port_authority/1, port_authority/2, set_port_authority/2]).
--export([port_authority_name/1, port_authority_name/2, set_port_authority_name/2]).
--export([port_state/1, port_state/2, set_port_state/2]).
--export([transitions/1, transitions/2, set_tranisitions/2]).
+-export([pvt_account_name/1, pvt_account_name/2, set_pvt_account_name/2]).
+-export([pvt_port_authority/1, pvt_port_authority/2, set_pvt_port_authority/2]).
+-export([pvt_port_authority_name/1, pvt_port_authority_name/2, set_pvt_port_authority_name/2]).
+-export([pvt_port_state/1, pvt_port_state/2, set_pvt_port_state/2]).
+-export([pvt_sent/1, pvt_sent/2, set_pvt_sent/2]).
+-export([pvt_transitions/1, pvt_transitions/2, set_pvt_tranisitions/2]).
 
 %% Utilities
 -export([get_transition/2]).
@@ -181,6 +184,18 @@ comments(Doc, Default) ->
 set_comments(Doc, Comments) ->
     kz_json:set_value([<<"comments">>], Comments, Doc).
 
+-spec ported_numbers(doc()) -> kz_term:api_object().
+ported_numbers(Doc) ->
+    ported_numbers(Doc, 'undefined').
+
+-spec ported_numbers(doc(), Default) -> kz_json:object() | Default.
+ported_numbers(Doc, Default) ->
+    kz_json:get_json_value([<<"ported_numbers">>], Doc, Default).
+
+-spec set_ported_numbers(doc(), kz_json:object()) -> doc().
+set_ported_numbers(Doc, Numbers) ->
+    kz_json:set_value([<<"ported_numbers">>], Numbers, Doc).
+
 -spec name(doc()) -> kz_term:api_ne_binary().
 name(Doc) ->
     name(Doc, 'undefined').
@@ -241,17 +256,17 @@ numbers(Doc, Default) ->
 set_numbers(Doc, Numbers) ->
     kz_json:set_value([<<"numbers">>], Numbers, Doc).
 
--spec number(doc(), kz_json:key()) -> kz_term:api_object().
-number(Doc, Number) ->
-    number(Doc, Number, 'undefined').
+-spec reference_number(doc()) -> kz_term:api_ne_binary().
+reference_number(Doc) ->
+    reference_number(Doc, 'undefined').
 
--spec number(doc(), kz_json:key(), Default) -> kz_json:object() | Default.
-number(Doc, Number, Default) ->
-    kz_json:get_json_value([<<"numbers">>, Number], Doc, Default).
+-spec reference_number(doc(), Default) -> kz_term:ne_binary() | Default.
+reference_number(Doc, Default) ->
+    kz_json:get_ne_binary_value([<<"reference_number">>], Doc, Default).
 
--spec set_number(doc(), kz_json:key(), kz_json:object()) -> doc().
-set_number(Doc, Number, Value) ->
-    kz_json:set_value([<<"numbers">>, Number], Value, Doc).
+-spec set_reference_number(doc(), kz_term:api_binary()) -> doc().
+set_reference_number(Doc, ReferenceNumber) ->
+    kz_json:set_value([<<"reference_number">>], ReferenceNumber, Doc).
 
 -spec signee_name(doc()) -> kz_term:api_binary().
 signee_name(Doc) ->
@@ -289,62 +304,118 @@ transfer_date(Doc, Default) ->
 set_transfer_date(Doc, TransferDate) ->
     kz_json:set_value([<<"transfer_date">>], TransferDate, Doc).
 
--spec port_authority(doc()) -> kz_term:api_ne_binary().
-port_authority(Doc) ->
-    port_authority(Doc, 'undefined').
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_account_name(doc()) -> kz_term:api_ne_binary().
+pvt_account_name(Doc) ->
+    pvt_account_name(Doc, 'undefined').
 
--spec port_authority(doc(), Default) -> kz_term:api_ne_binary() | Default.
-port_authority(Doc, Default) ->
+-spec pvt_account_name(doc(), Default) -> kz_term:ne_binary() | Default.
+pvt_account_name(Doc, Default) ->
+    kz_json:get_ne_binary_value([<<"pvt_account_name">>], Doc, Default).
+
+-spec set_pvt_account_name(doc(), kz_term:ne_binary()) -> doc().
+set_pvt_account_name(Doc, Name) ->
+    kz_json:set_value([<<"pvt_account_name">>], Name, Doc).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_port_authority(doc()) -> kz_term:api_ne_binary().
+pvt_port_authority(Doc) ->
+    pvt_port_authority(Doc, 'undefined').
+
+-spec pvt_port_authority(doc(), Default) -> kz_term:api_ne_binary() | Default.
+pvt_port_authority(Doc, Default) ->
     kz_json:get_ne_binary_value([<<"pvt_port_authority">>], Doc, Default).
 
--spec set_port_authority(doc(), kz_term:api_binary()) -> doc().
-set_port_authority(Doc, PortAuthority) ->
+-spec set_pvt_port_authority(doc(), kz_term:api_binary()) -> doc().
+set_pvt_port_authority(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_authority">>], PortAuthority, Doc).
 
--spec port_authority_name(doc()) -> kz_term:api_ne_binary().
-port_authority_name(Doc) ->
-    port_authority_name(Doc, 'undefined').
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_port_authority_name(doc()) -> kz_term:api_ne_binary().
+pvt_port_authority_name(Doc) ->
+    pvt_port_authority_name(Doc, 'undefined').
 
--spec port_authority_name(doc(), Default) -> kz_term:api_ne_binary() | Default.
-port_authority_name(Doc, Default) ->
+-spec pvt_port_authority_name(doc(), Default) -> kz_term:api_ne_binary() | Default.
+pvt_port_authority_name(Doc, Default) ->
     kz_json:get_ne_binary_value([<<"pvt_port_authority_name">>], Doc, Default).
 
--spec set_port_authority_name(doc(), kz_term:api_binary()) -> doc().
-set_port_authority_name(Doc, PortAuthority) ->
+-spec set_pvt_port_authority_name(doc(), kz_term:api_binary()) -> doc().
+set_pvt_port_authority_name(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_authority_name">>], PortAuthority, Doc).
 
--spec port_state(doc()) -> kz_term:api_ne_binary().
-port_state(Doc) ->
-    port_state(Doc, 'undefined').
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_port_state(doc()) -> kz_term:api_ne_binary().
+pvt_port_state(Doc) ->
+    pvt_port_state(Doc, 'undefined').
 
--spec port_state(doc(), Default) -> kz_term:api_ne_binary() | Default.
-port_state(Doc, Default) ->
+-spec pvt_port_state(doc(), Default) -> kz_term:api_ne_binary() | Default.
+pvt_port_state(Doc, Default) ->
     kz_json:get_ne_binary_value([<<"pvt_port_state">>], Doc, Default).
 
--spec set_port_state(doc(), kz_term:api_binary()) -> doc().
-set_port_state(Doc, PortAuthority) ->
+-spec set_pvt_port_state(doc(), kz_term:api_binary()) -> doc().
+set_pvt_port_state(Doc, PortAuthority) ->
     kz_json:set_value([<<"pvt_port_state">>], PortAuthority, Doc).
 
--spec transitions(doc()) -> kz_term:api_objects().
-transitions(Doc) ->
-    port_authority(Doc, 'undefined').
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_sent(doc()) -> kz_term:api_boolean().
+pvt_sent(Doc) ->
+    pvt_port_state(Doc, 'undefined').
 
--spec transitions(doc(), Default) -> kz_term:api_objects() | Default.
-transitions(Doc, Default) ->
-    kz_json:get_ne_json_value([<<"pvt_transitions">>], Doc, Default).
+-spec pvt_sent(doc(), Default) -> kz_term:api_boolean() | Default.
+pvt_sent(Doc, Default) ->
+    kz_json:get_ne_binary_value([<<"pvt_sent">>], Doc, Default).
 
--spec set_tranisitions(doc(), kz_term:api_objects()) -> doc().
-set_tranisitions(Doc, Transitions) ->
+-spec set_pvt_sent(doc(), kz_term:api_boolean()) -> doc().
+set_pvt_sent(Doc, IsSent) ->
+    kz_json:set_value([<<"pvt_sent">>], IsSent, Doc).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_transitions(doc()) -> kz_term:api_objects().
+pvt_transitions(Doc) ->
+    pvt_transitions(Doc, 'undefined').
+
+-spec pvt_transitions(doc(), Default) -> kz_term:api_objects() | Default.
+pvt_transitions(Doc, Default) ->
+    kz_json:get_list_value([<<"pvt_transitions">>], Doc, Default).
+
+-spec set_pvt_tranisitions(doc(), kz_term:api_objects()) -> doc().
+set_pvt_tranisitions(Doc, Transitions) ->
     kz_json:set_value([<<"pvt_transitions">>], Transitions, Doc).
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec get_transition(doc(), kz_term:ne_binary()) -> kz_json:objects().
 get_transition(Doc, ToState) ->
     ToStatePath = [<<"transition">>, <<"new">>],
     [Transition
-     || Transition <- transitions(Doc, []),
+     || Transition <- pvt_transitions(Doc, []),
         kz_json:get_ne_binary_value(ToStatePath, Transition) =:= ToState
     ].
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec find_port_authority(doc() | kz_term:api_ne_binary()) -> kz_term:api_ne_binary().
 find_port_authority(?NE_BINARY = AccountId) ->
     case kapps_util:get_master_account_id() of
@@ -357,7 +428,7 @@ find_port_authority(?NE_BINARY = AccountId) ->
 find_port_authority(Doc) ->
     case kz_json:is_json_object(Doc) of
         'true' ->
-            case port_authority(Doc) of
+            case pvt_port_authority(Doc) of
                 'undefined' ->
                     find_port_authority(kz_doc:account_id(Doc));
                 PortAuthority ->

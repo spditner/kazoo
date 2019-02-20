@@ -59,7 +59,7 @@
 %%------------------------------------------------------------------------------
 -spec current_state(kz_json:object()) -> kz_term:api_binary().
 current_state(JObj) ->
-    kz_json:get_value(?PORT_PVT_STATE, JObj, ?PORT_UNCONFIRMED).
+    kzd_port_requests:pvt_port_state(JObj, ?PORT_UNCONFIRMED).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -84,8 +84,8 @@ public_fields(JObj) ->
                        ,{<<"created">>, kz_doc:created(JObj)}
                        ,{<<"updated">>, kz_doc:modified(JObj)}
                        ,{<<"uploads">>, normalize_attachments(As)}
-                       ,{<<"port_state">>, kz_json:get_ne_binary_value(?PORT_PVT_STATE, JObj, ?PORT_UNCONFIRMED)}
-                       ,{<<"sent">>, kz_json:is_true(?PORT_PVT_SENT, JObj)}
+                       ,{<<"port_state">>, current_state(JObj)}
+                       ,{<<"sent">>, kzd_port_requests:pvt_sent(JObj, 'false')}
                        ,{<<"_read_only">>, ReadOnly}
                        ]
                       ,kz_doc:public_fields(JObj)
@@ -94,8 +94,9 @@ public_fields(JObj) ->
 -spec read_only_public_fields(kz_json:object()) -> kz_term:api_object().
 read_only_public_fields(Doc) ->
     JObj = kz_json:from_list(
-             [{<<"port_authority">>, kzd_port_requests:port_authority(Doc)}
-             ,{<<"port_authority_name">>, kzd_port_requests:port_authority_name(Doc)}
+             [{<<"account_name">>, kzd_port_requests:pvt_account_name(Doc)}
+             ,{<<"port_authority">>, kzd_port_requests:pvt_port_authority(Doc)}
+             ,{<<"port_authority_name">>, kzd_port_requests:pvt_port_authority_name(Doc)}
              ]
             ),
     case kz_json:is_empty(JObj) of
@@ -169,7 +170,7 @@ descendant_active_ports(AccountId) ->
 -spec is_active_descendant_port(kz_json:object()) -> boolean().
 is_active_descendant_port(JObj) ->
     Doc = kz_json:get_value(<<"doc">>, JObj),
-    lists:member(kz_json:get_ne_binary_value(?PORT_PVT_STATE, Doc), ?PORT_ACTIVE_STATES).
+    lists:member(kzd_port_requests:pvt_port_state(Doc), ?PORT_ACTIVE_STATES).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -201,9 +202,9 @@ normalize_attachments_map(K, V) ->
 %%------------------------------------------------------------------------------
 -spec normalize_numbers(kz_json:object()) -> kz_json:object().
 normalize_numbers(PortReq) ->
-    Numbers = kz_json:get_value(?NUMBERS_KEY, PortReq, kz_json:new()),
+    Numbers = kzd_port_requests:numbers(PortReq, kz_json:new()),
     Normalized = kz_json:map(fun normalize_number_map/2, Numbers),
-    kz_json:set_value(?NUMBERS_KEY, Normalized, PortReq).
+    kzd_port_requests:set_numbers(PortReq, Normalized).
 
 -spec normalize_number_map(kz_json:path(), kz_json:json_term()) ->
                                   {kz_json:path(), kz_json:json_term()}.
@@ -218,7 +219,7 @@ new(PortReq, Options) ->
                                   ),
     Unconf = [{?PORT_PVT_TYPE, ?TYPE_PORT_REQUEST}
              ,{?PORT_PVT_STATE, ?PORT_UNCONFIRMED}
-             ,{?PORT_PVT_TRANSITIONS, [transition_metadata_jobj(undefined, ?PORT_UNCONFIRMED, Metadata)]}
+             ,{?PORT_PVT_TRANSITIONS, [transition_metadata_jobj('undefined', ?PORT_UNCONFIRMED, Metadata)]}
              ,{<<"pvt_account_name">>, props:get_value('account_name', Options)} %% makes port listing sane in crossbar
              ,{<<"pvt_port_authority">>, props:get_value('port_authority_id', Options)}
              ,{<<"pvt_port_authority_name">>, props:get_value('port_authority_name', Options)}
@@ -313,11 +314,11 @@ transition(JObj, Metadata, [_FromState | FromStates], ToState, CurrentState) ->
 -spec successful_transition(kz_json:object(), kz_term:ne_binary(), kz_term:ne_binary(), transition_metadata()) -> kz_json:object().
 successful_transition(JObj, FromState, ToState, Metadata) ->
     MetadataJObj = transition_metadata_jobj(FromState, ToState, Metadata),
-    NewTransitions = [MetadataJObj | kz_json:get_list_value(?PORT_PVT_TRANSITIONS, JObj, [])],
-    Values = [{?PORT_PVT_STATE, ToState}
-             ,{?PORT_PVT_TRANSITIONS, NewTransitions}
-             ],
-    kz_json:set_values(Values, kz_json:delete_keys(public_fields(), JObj)).
+    NewTransitions = [MetadataJObj | kzd_port_requests:pvt_transitions(JObj, [])],
+    Setters = [{fun kzd_port_requests:set_pvt_port_state/2, ToState}
+              ,{fun kzd_port_requests:set_pvt_tranisitions/2, NewTransitions}
+              ],
+    kz_doc:setters(kz_json:delete_keys(public_fields(), JObj), Setters).
 
 -spec transition_metadata_jobj(kz_term:api_ne_binary(), kz_term:ne_binary(), transition_metadata()) -> kz_json:object().
 transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
@@ -340,7 +341,7 @@ transition_metadata_jobj(FromState, ToState, #{auth_account_id := AuthAccountId
       ]).
 
 -spec maybe_user(transition_metadata()) -> kz_term:proplist().
-maybe_user(#{auth_user_id := undefined}) -> [];
+maybe_user(#{auth_user_id := 'undefined'}) -> [];
 maybe_user(#{auth_user_id := UserId
             ,user_first_name := OptionalFirstName
             ,user_last_name := OptionalLastName
@@ -370,12 +371,12 @@ transition_metadata(AuthAccountId, AuthUserId) ->
 transition_metadata(?MATCH_ACCOUNT_RAW(AuthAccountId), UserId, Reason) ->
     OptionalUserId = case UserId of
                          ?NE_BINARY -> UserId;
-                         _ -> undefined
+                         _ -> 'undefined'
                      end,
     UserJObj = get_user_name(AuthAccountId, OptionalUserId),
     OptionalReason = case Reason of
                          ?NE_BINARY -> Reason;
-                         _ -> undefined
+                         _ -> 'undefined'
                      end,
     #{auth_account_id => AuthAccountId
      ,auth_account_name => kzd_accounts:fetch_name(AuthAccountId)
@@ -488,7 +489,7 @@ completed_portin(Num, AccountId, #{optional_reason := OptionalReason}) ->
 -spec transition_numbers(kz_json:object()) -> transition_response().
 transition_numbers(PortReq) ->
     PortReqId = kz_doc:id(PortReq),
-    AccountId = kz_json:get_value(?PORT_PVT_ACCOUNT_ID, PortReq),
+    AccountId = kz_doc:account_id(PortReq),
     Options = [{auth_by, ?KNM_DEFAULT_AUTH_BY}
               ,{assign_to, AccountId}
               ,{dry_run, false}
@@ -496,7 +497,7 @@ transition_numbers(PortReq) ->
               ,{public_fields, kz_json:from_list([{<<"port_id">>, PortReqId}])}
               ],
     lager:debug("creating local numbers for port ~s", [PortReqId]),
-    Numbers = kz_json:get_keys(?NUMBERS_KEY, PortReq),
+    Numbers = kz_json:get_keys(kzd_port_requests:numbers(PortReq)),
     case knm_numbers:create(Numbers, Options) of
         #{ko := KOs} when map_size(KOs) =:= 0 ->
             lager:debug("all numbers ported, removing from port request"),
@@ -533,10 +534,10 @@ is_in_account_and_in_service(AccountId, PN) ->
 %%------------------------------------------------------------------------------
 -spec clear_numbers_from_port(kz_json:object()) -> {ok, kz_json:object()}.
 clear_numbers_from_port(PortReq) ->
-    Update = [{?NUMBERS_KEY, kz_json:new()}
-             ,{<<"ported_numbers">>, kz_json:get_json_value(?NUMBERS_KEY, PortReq)}
-             ],
-    Cleared = kz_json:set_values(Update, PortReq),
+    Setters = [{fun kzd_port_requests:set_numbers/2, kz_json:new()}
+              ,{fun kzd_port_requests:set_ported_numbers/2, kzd_port_requests:numbers(PortReq)}
+              ],
+    Cleared = kz_doc:setters(PortReq, Setters),
     case save_doc(Cleared) of
         {'ok', _PortReq1}=Ok ->
             lager:debug("port numbers cleared"),
@@ -669,7 +670,7 @@ send_attachment(Url, Id, Name, Options, Attachment) ->
 %%------------------------------------------------------------------------------
 -spec set_flag(kz_json:object()) -> 'ok'.
 set_flag(JObj) ->
-    Doc = kz_json:set_value(?PORT_PVT_SENT, 'true', JObj),
+    Doc = kzd_port_requests:set_pvt_sent(JObj, 'true'),
     case save_doc(Doc) of
         {'ok', _} -> lager:debug("flag for submitted_port_request successfully set");
         {'error', _R} ->
@@ -731,25 +732,25 @@ migrate_doc(Fun, {Doc, IsUpdated}) ->
 -spec add_pvt_tree(kz_json:object()) -> kz_term:api_object().
 add_pvt_tree(PortRequest) ->
     AccountId = kz_doc:account_id(PortRequest),
-    case kz_json:get_value(?PORT_PVT_TREE, PortRequest) of
+    case kzd_accounts:tree(PortRequest, 'undefined') of
         'undefined' ->
             {'ok', AccountDoc} = kzd_accounts:fetch(AccountId),
-            kz_json:set_value(?PORT_PVT_TREE, kzd_accounts:tree(AccountDoc), PortRequest);
+            kzd_accounts:set_tree(PortRequest, kzd_accounts:tree(AccountDoc));
         _Tree -> 'undefined'
     end.
 
 -spec add_pvt_port_authority(kz_json:object()) -> kz_term:api_object().
 add_pvt_port_authority(PortRequest) ->
     AccountId = kz_doc:account_id(PortRequest),
-    case kzd_port_requests:port_authority(PortRequest) == 'undefined'
-        orelse kzd_port_requests:port_authority_name(PortRequest) == 'undefined'
+    case kzd_port_requests:pvt_port_authority(PortRequest) == 'undefined'
+        orelse kzd_port_requests:pvt_port_authority_name(PortRequest) == 'undefined'
     of
         'true' ->
             case kzd_port_requests:find_port_authority(AccountId) of
                 'undefined' -> 'undefined';
                 AuthorityId ->
-                    Setters = [{fun kzd_port_requests:set_port_authority/2, AuthorityId}
-                              ,{fun kzd_port_requests:set_port_authority_name/2
+                    Setters = [{fun kzd_port_requests:set_pvt_port_authority/2, AuthorityId}
+                              ,{fun kzd_port_requests:set_pvt_port_authority_name/2
                                ,kzd_accounts:fetch_name(AuthorityId)
                                }
                               ],
@@ -762,29 +763,28 @@ add_pvt_port_authority(PortRequest) ->
 -spec add_pvt_account_name(kz_json:object()) -> kz_term:api_object().
 add_pvt_account_name(PortRequest) ->
     AccountId = kz_doc:account_id(PortRequest),
-    case kz_json:get_value(<<"pvt_account_name">>, PortRequest) of
+    case kzd_port_requests:pvt_account_name(PortRequest) of
         'undefined' ->
-            kz_json:set_value(<<"pvt_account_name">>, kzd_accounts:fetch_name(AccountId), PortRequest);
+            kzd_port_requests:set_pvt_account_name(PortRequest, kzd_accounts:fetch_name(AccountId));
         _Tree -> 'undefined'
     end.
 
 -spec rename_superduper_comment(kz_json:object()) -> kz_term:api_object().
 rename_superduper_comment(PortRequest) ->
-    Comments = kz_json:get_list_value(<<"comments">>, PortRequest, []),
+    Comments = kzd_port_requests:comments(PortRequest, []),
     case lists:foldl(fun rename_to_is_private/2, {[], 'false'}, Comments) of
         {_, 'false'} -> 'undefined';
         {Updated, 'true'} ->
-            kz_json:set_value(<<"comments">>, lists:reverse(Updated), PortRequest)
+            kzd_port_requests:set_comments(PortRequest, lists:reverse(Updated))
     end.
 
 rename_to_is_private(Comment, {Acc, IsUpdated}) ->
     case kz_json:get_value(<<"superduper_comment">>, Comment) of
         'undefined' -> {[Comment | Acc], IsUpdated};
         Boolean ->
-            {[kz_json:set_value(<<"is_private">>
-                               ,Boolean
-                               ,kz_json:delete_key(<<"superduper_comment">>, Comment)
-                               )
+            {[kzd_comment:set_is_private(kz_json:delete_key(<<"superduper_comment">>, Comment)
+                                        ,Boolean
+                                        )
               | Acc
              ]
             ,'true'

@@ -6,12 +6,16 @@
         "bill": {
             "description": "Billing information of the losing carrier",
             "properties": {
-                "carrier": {
-                    "description": "The name of the losing carrier",
+                "account_number": {
+                    "description": "Account Number to identify account",
                     "type": "string"
                 },
-                "extended_address": {
-                    "description": "The suite/floor/apt of the billing address the losing carrier has on record",
+                "btn": {
+                    "description": "Billing Telephone Number (BTN) to identify account",
+                    "type": "string"
+                },
+                "carrier": {
+                    "description": "The name of the losing carrier",
                     "type": "string"
                 },
                 "locality": {
@@ -22,8 +26,16 @@
                     "description": "The losing carrier billing/account name",
                     "type": "string"
                 },
+                "pin": {
+                    "description": "Personal Identification Number (PIN) to identify account",
+                    "type": "string"
+                },
                 "postal_code": {
                     "description": "The zip/postal code of the billing address the losing carrier has on record",
+                    "type": "string"
+                },
+                "reference_number": {
+                    "description": "Winning carrier reference number or order ID",
                     "type": "string"
                 },
                 "region": {
@@ -36,6 +48,34 @@
                 },
                 "street_number": {
                     "description": "The street number of the billing address the losing carrier has on record",
+                    "type": "string"
+                },
+                "street_post_dir": {
+                    "description": "Street Post-Direction",
+                    "enum": [
+                        "E",
+                        "N",
+                        "NE",
+                        "NW",
+                        "S",
+                        "SE",
+                        "SW",
+                        "W"
+                    ],
+                    "type": "string"
+                },
+                "street_pre_dir": {
+                    "description": "Street Pre-Direction",
+                    "enum": [
+                        "E",
+                        "N",
+                        "NE",
+                        "NW",
+                        "S",
+                        "SE",
+                        "SW",
+                        "W"
+                    ],
                     "type": "string"
                 },
                 "street_type": {

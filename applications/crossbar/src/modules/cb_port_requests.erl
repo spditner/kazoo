@@ -997,7 +997,7 @@ filter_private_comments(Context, JObj) ->
     Filters = [{[<<"superduper_comment">>], fun kz_term:is_false/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_false/1}
               ],
-    case kzd_port_requests:port_authority(JObj) =:= cb_context:auth_account_id(Context)
+    case kzd_port_requests:pvt_port_authority(JObj) =:= cb_context:auth_account_id(Context)
         orelse cb_context:fetch(Context, 'is_port_authority')
         orelse cb_context:is_superduper_admin(Context)
     of
