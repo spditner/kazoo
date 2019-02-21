@@ -357,13 +357,14 @@ load_doc(Context) ->
 -spec load_doc(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binaries()) ->
                       cb_context:context().
 load_doc(Context, <<"port_requests">>, [Id]) ->
-    C1 = cb_port_requests:load_port_request(cb_port_requests:set_port_authority(Context), Id),
-    case cb_context:resp_status(C1) =:= 'success' of
+    ReqData = cb_context:req_data(Context),
+    C1 = cb_context:store(Context, 'req_comments', kzd_port_requests:comments(ReqData, [])),
+    C2 = cb_port_requests:load_port_request(cb_port_requests:set_port_authority(C1), Id),
+    case cb_context:resp_status(C2) =:= 'success' of
         'true' ->
-            ReqData = cb_context:req_data(C1),
-            cb_port_requests:validate_comments(C1, kz_json:get_value(?COMMENTS, ReqData, []));
+            cb_port_requests:validate_port_comments(C2, fun kz_term:identity/1);
         'false' ->
-            C1
+            C2
     end;
 load_doc(Context, _Type, [Id]) ->
     crossbar_doc:load(Id, Context, ?TYPE_CHECK_OPTION_ANY);

@@ -25,7 +25,7 @@
 
         ,load_port_request/2
         ,set_port_authority/1
-        ,validate_comments/2
+        ,validate_port_comments/2
         ,filter_private_comments/2
         ,send_port_comment_notifications/2
         ]).
@@ -263,7 +263,12 @@ validate_port_requests(Context, ?HTTP_PUT) ->
 %%------------------------------------------------------------------------------
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, Id) ->
-    validate_port_request(set_port_authority(Context), Id, cb_context:req_verb(Context)).
+    Comments = kzd_port_requests:comments(cb_context:req_data(Context), []),
+    Setters = [{fun cb_context:store/3, 'req_comments', Comments}
+              ,{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+              ],
+    C1 = cb_context:setters(Context, Setters),
+    validate_port_request(set_port_authority(C1), Id, cb_context:req_verb(C1)).
 
 -spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
                                    cb_context:context().
@@ -279,8 +284,7 @@ validate_port_request(Context, Id, ?HTTP_PATCH) ->
                           OnSuccess = fun(InnerC) -> validate_port_comments(InnerC, fun kz_term:identity/1) end,
                           cb_context:validate_request_data(?SCHEMA, C, OnSuccess)
                   end,
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
-    crossbar_doc:patch_and_validate(Id, Context1, ValidateFun);
+    crossbar_doc:patch_and_validate(Id, Context, ValidateFun);
 validate_port_request(Context, Id, ?HTTP_DELETE) ->
     is_deletable(load_port_request(Context, Id)).
 
@@ -303,12 +307,34 @@ validate(Context, Id, ?PORT_ATTACHMENT) ->
 validate(Context, Id, ?PATH_TOKEN_LOA) ->
     generate_loa(read(set_port_authority(Context), Id));
 validate(Context, Id, ?PATH_TOKEN_TIMELINE) ->
-    maybe_prepare_timeline(load_port_request(set_port_authority(Context), Id)).
+    C1 = load_port_request(set_port_authority(Context), Id),
+    case 'success' =:= cb_context:resp_status(C1) of
+        false -> C1;
+        true ->
+            NewDoc = prepare_timeline(C1, cb_context:doc(C1)),
+            cb_context:set_resp_data(C1, NewDoc)
+    end.
+
+-spec validate_attachments(cb_context:context(), kz_term:ne_binary(), http_method()) ->
+                                  cb_context:context().
+validate_attachments(Context, Id, ?HTTP_GET) ->
+    summary_attachments(Context, Id);
+validate_attachments(Context, Id, ?HTTP_PUT) ->
+    read(Context, Id).
 
 -spec validate(cb_context:context(), path_token(), path_token(), path_token()) ->
                       cb_context:context().
 validate(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
     validate_attachment(set_port_authority(Context), Id, AttachmentId, cb_context:req_verb(Context)).
+
+-spec validate_attachment(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary(), http_method()) ->
+                                 cb_context:context().
+validate_attachment(Context, Id, AttachmentId, ?HTTP_GET) ->
+    load_attachment(Id, AttachmentId, Context);
+validate_attachment(Context, Id, AttachmentId, ?HTTP_POST) ->
+    load_attachment(Id, AttachmentId, Context);
+validate_attachment(Context, Id, AttachmentId, ?HTTP_DELETE) ->
+    is_deletable(load_attachment(Id, AttachmentId, Context)).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -384,7 +410,7 @@ patch(Context, Id, NewState=?PORT_CANCELED) ->
 %%------------------------------------------------------------------------------
 -spec post(cb_context:context(), path_token()) -> cb_context:context().
 post(Context, Id) ->
-    save_and_send_comments(Context, Id, split_new_comments(Context)).
+    save_and_send_comments(Context, Id, get_new_comments(Context)).
 
 -spec post(cb_context:context(), path_token(), path_token(), path_token()) -> cb_context:context().
 post(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
@@ -440,8 +466,8 @@ save(Context) ->
                                  ),
     crossbar_doc:save(Context1).
 
--spec save_and_send_comments(cb_context:context(), kz_term:ne_binary(), split_comments()) -> cb_context:context().
-save_and_send_comments(Context, _, {[], _}) ->
+-spec save_and_send_comments(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> cb_context:context().
+save_and_send_comments(Context, _, []) ->
     Context1 = save(Context),
     case cb_context:resp_status(Context1) of
         'success' ->
@@ -450,7 +476,7 @@ save_and_send_comments(Context, _, {[], _}) ->
         _ ->
             Context1
     end;
-save_and_send_comments(Context, Id, {NewComments, _}) ->
+save_and_send_comments(Context, Id, NewComments) ->
     case phonebook:maybe_add_comment(Context, NewComments) of
         {'ok', _} ->
             Context1 = save(Context),
@@ -569,7 +595,11 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
     ValidateFun = fun (_PortId, C) ->
                           cb_context:validate_request_data(?SCHEMA, C, OnSuccess)
                   end,
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
+    Comments = kzd_port_requests:comments(cb_context:req_data(Context), []),
+    Setters = [{fun cb_context:store/3, 'req_comments', Comments}
+              ,{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+              ],
+    Context1 = cb_context:setters(Context, Setters),
     LoadOptions = ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST),
     crossbar_doc:patch_and_validate(PortId, set_port_authority(Context1), ValidateFun, LoadOptions).
 
@@ -584,34 +614,37 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
 -spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
                                     cb_context:context().
 validate_port_comments(Context, OnSuccess) ->
-    validate_port_comments(Context, OnSuccess, split_new_comments(Context)).
+    validate_port_comments(Context, OnSuccess, get_new_comments(Context)).
 
--spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), split_comments()) -> cb_context:context().
-validate_port_comments(Context, OnSuccess, {[], _}) ->
-    successful_comments_validation(Context, OnSuccess);
-validate_port_comments(Context, OnSuccess, {NewComments, OldComments}) ->
-    C1 = validate_comments(Context, {NewComments, OldComments}),
+-spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:ojbects()) -> cb_context:context().
+validate_port_comments(Context, OnSuccess, []) ->
+    Doc = cb_context:doc(Context),
+    Comments = kzd_port_requests:comments(Doc, []),
+    NewDoc = kzd_port_requests:set_comments(Doc, cb_comments:sort(Comments)),
+    OnSuccess(cb_context:set_doc(Context, NewDoc));
+validate_port_comments(Context, OnSuccess, NewComments) ->
+    C1 = validate_comments(Context, NewComments),
     case cb_context:resp_status(C1) =:= 'success' of
         'true' ->
-            successful_comments_validation(Context, OnSuccess);
+            OnSuccess(Context);
         'false' ->
             C1
     end.
 
--spec validate_comments(cb_context:context(), split_comments()) -> cb_context:context().
-validate_comments(Context, {NewComments, OldComments}) ->
+-spec validate_comments(cb_context:context(), kz_json:objects()) -> cb_context:context().
+validate_comments(Context, NewComments) ->
     IsPortAuthority = cb_context:fetch(Context, 'is_port_authority', 'false')
         orelse cb_context:is_superduper_admin(Context),
-    validate_comments(Context, {NewComments, OldComments}, IsPortAuthority).
+    validate_comments(Context, NewComments, IsPortAuthority).
 
--spec validate_comments(cb_context:context(), split_comments(), boolean()) -> cb_context:context().
-validate_comments(Context, {NewComments, OldComments}, 'false') ->
+-spec validate_comments(cb_context:context(), kz_json:objects(), boolean()) -> cb_context:context().
+validate_comments(Context, NewComments, 'false') ->
     Filters = [{[<<"action_required">>], fun kz_term:is_true/1}
               ,{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_true/1}
               ],
     case run_comment_filter(NewComments, Filters) of
-        [] -> add_commentors_info(Context, {NewComments, OldComments});
+        [] -> add_commentors_info(Context, NewComments);
         [_|_] ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
@@ -619,7 +652,7 @@ validate_comments(Context, {NewComments, OldComments}, 'false') ->
                     ]),
             cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
     end;
-validate_comments(Context, {NewComments, OldComments}, 'true') ->
+validate_comments(Context, NewComments, 'true') ->
     Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
               ,{[<<"is_private">>], fun kz_term:is_true/1}
               ],
@@ -628,7 +661,7 @@ validate_comments(Context, {NewComments, OldComments}, 'true') ->
              kz_json:is_true(<<"action_required">>, Comment, 'false')
          ]
     of
-        [] -> add_commentors_info(Context, {NewComments, OldComments});
+        [] -> add_commentors_info(Context, NewComments);
         [_|_] ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"you're not allowed to action_required a private comment">>}
@@ -637,58 +670,29 @@ validate_comments(Context, {NewComments, OldComments}, 'true') ->
             cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
     end.
 
--spec add_commentors_info(cb_context:context(), split_comments()) -> cb_context:context().
-add_commentors_info(Context, {NewComments, OldComments}) ->
+-spec add_commentors_info(cb_context:context(), kz_json:objects()) -> cb_context:context().
+add_commentors_info(Context, NewComments) ->
     Doc = cb_context:doc(Context),
+    DbComments = kzd_port_requests:comments(cb_context:fetch(Context, 'db_doc'), []),
     UserInfo = get_commentor_info(Context, cb_context:auth_doc(Context)),
-    Updated = [kz_json:set_values(props:filter_undefined(UserInfo), Comment) || Comment <- NewComments],
-    cb_context:set_doc(Context, kz_json:set_value(<<"comments">>, OldComments ++ Updated, Doc)).
+    Updated = [kz_doc:setters(Comment, props:filter_undefined(UserInfo)) || Comment <- NewComments],
+    cb_context:set_doc(Context, kzd_port_requests:set_comments(Doc, cb_comments:sort(DbComments ++ Updated))).
 
 -spec get_commentor_info(cb_context:context(), kz_term:api_object()) -> kz_term:proplist().
 get_commentor_info(Context, 'undefined') ->
-    [{<<"account_id">>, cb_context:auth_account_id(Context)}];
+    [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}];
 get_commentor_info(Context, AuthDoc) ->
     case kz_doc:type(AuthDoc) of
         <<"user">> ->
-            [{<<"account_id">>, cb_context:auth_account_id(Context)}
-            ,{<<"user_id">>, kz_doc:id(AuthDoc)}
-            ,{<<"first_name">>, kzd_users:first_name(AuthDoc)}
-            ,{<<"last_name">>, kzd_users:last_name(AuthDoc)}
-            ,{<<"author">>, kzd_users:full_name(AuthDoc)}
+            [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}
+            ,{fun kzd_comment:set_user_id/2, kz_doc:id(AuthDoc)}
+            ,{fun kzd_comment:set_author/2, kzd_users:full_name(AuthDoc)}
             ];
         _ ->
-            [{<<"account_id">>, cb_context:auth_account_id(Context)}
-            ,{<<"user_id">>, kz_json:get_value(<<"owner_id">>, AuthDoc)}
+            [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}
+            ,{fun kzd_comment:set_author/2, kz_json:get_value(<<"owner_id">>, AuthDoc)}
             ]
     end.
-
--spec successful_comments_validation(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
-                                            cb_context:context().
-successful_comments_validation(Context, OnSuccess) ->
-    Doc = cb_context:doc(Context),
-    Comments = kz_json:get_list_value(<<"comments">>, Doc, []),
-    NewDoc = kz_json:set_value(<<"comments">>, cb_comments:sort(Comments), Doc),
-    OnSuccess(cb_context:set_doc(Context, NewDoc)).
-
--spec validate_attachments(cb_context:context(), kz_term:ne_binary(), http_method()) ->
-                                  cb_context:context().
-validate_attachments(Context, Id, ?HTTP_GET) ->
-    summary_attachments(Context, Id);
-validate_attachments(Context, Id, ?HTTP_PUT) ->
-    read(Context, Id).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec validate_attachment(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary(), http_method()) ->
-                                 cb_context:context().
-validate_attachment(Context, Id, AttachmentId, ?HTTP_GET) ->
-    load_attachment(Id, AttachmentId, Context);
-validate_attachment(Context, Id, AttachmentId, ?HTTP_POST) ->
-    load_attachment(Id, AttachmentId, Context);
-validate_attachment(Context, Id, AttachmentId, ?HTTP_DELETE) ->
-    is_deletable(load_attachment(Id, AttachmentId, Context)).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -981,16 +985,6 @@ prepare_timeline(Context, Doc) ->
               ],
     {_, NewDocs} = lists:unzip(lists:keysort(1, Indexed)),
     NewDocs.
-
-%% calls by `validate(Context, Id, ?PATH_TOKEN_TIMELINE)'
--spec maybe_prepare_timeline(cb_context:context()) -> cb_context:context().
-maybe_prepare_timeline(Context) ->
-    case 'success' =:= cb_context:resp_status(Context) of
-        false -> Context;
-        true ->
-            NewDoc = prepare_timeline(Context, cb_context:doc(Context)),
-            cb_context:set_resp_data(Context, NewDoc)
-    end.
 
 -spec filter_private_comments(cb_context:context(), kz_json:object()) -> kz_json:object().
 filter_private_comments(Context, JObj) ->
@@ -1401,27 +1395,26 @@ maybe_revert_patch(Context, 'false') ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--type split_comments() :: {kz_json:objects(), kz_json:objects()}.
-
--spec split_new_comments(cb_context:context()) -> split_comments().
-split_new_comments(Context) ->
-    ReqData = cb_context:req_data(Context),
-    ReqComments = cb_comments:sort(kz_json:get_list_value(<<"comments">>, ReqData, [])),
+-spec get_new_comments(cb_context:context()) -> kz_json:objects().
+get_new_comments(Context) ->
+    ReqComments = cb_comments:sort(cb_context:fetch(Context, 'req_comments', [])),
     case cb_comments:sort(kz_json:get_list_value(<<"comments">>, cb_context:fetch(Context, 'db_doc'), [])) of
-        [] -> {ReqComments, []};
+        [] ->
+            ReqComments;
         Comments ->
             OldTime = kz_json:get_integer_value(<<"timestamp">>, lists:last(Comments)),
-            lists:split(fun(Comment) -> kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime end
-                       ,Comments
-                       )
+            [Comment
+             || Comment <- ReqComments,
+                kz_json:get_integer_value(<<"timestamp">>, Comment) > OldTime
+            ]
     end.
 
 -spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary()) -> 'ok'.
 send_port_comment_notifications(Context, Id) ->
-    send_port_comment_notifications(Context, Id, split_new_comments(Context)).
+    send_port_comment_notifications(Context, Id, get_new_comments(Context)).
 
--spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary(), split_comments()) -> 'ok'.
-send_port_comment_notifications(Context, Id, {NewComments, _}) ->
+-spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> 'ok'.
+send_port_comment_notifications(Context, Id, NewComments) ->
     _ = lists:foldl(fun send_port_comment_notification/2, {Context, Id, length(NewComments), 0}, NewComments),
     'ok'.
 
