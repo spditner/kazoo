@@ -75,7 +75,7 @@ fix_numbers(_DataJObj, _TemplateId, PortReqJObj) ->
                            ,[]
                            ,get_numbers(PortReqJObj)
                            ),
-    kz_json:set_value(<<"numbers">>, Numbers, PortReqJObj).
+    kzd_port_requests:set_numbers(PortReqJObj, Numbers).
 
 -spec get_numbers(kz_json:object()) -> kz_term:ne_binaries().
 get_numbers(PortReqJObj) ->
@@ -139,9 +139,9 @@ fix_bill_object(PortReqJObj, Category, KeyName) ->
 
 -spec fix_reference_number(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
 fix_reference_number(_DataJObj, _TemplateId, PortReqJObj) ->
-    kzd_port_requests:reference_number(PortReqJObj
-                                      ,kzd_port_requests:reference_number(PortReqJObj, <<"-">>)
-                                      ).
+    kzd_port_requests:set_reference_number(PortReqJObj
+                                          ,kzd_port_requests:reference_number(PortReqJObj, <<"-">>)
+                                          ).
 
 -spec fix_port_state(kz_json:object(), kz_term:ne_binary(), kz_json:object()) -> kz_json:object().
 fix_port_state(_DataJObj, _TemplateId, PortReqJObj) ->
