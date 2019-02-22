@@ -408,7 +408,7 @@ get_comments(Context) ->
 
 get_comments(Context, <<"port_requests">>) ->
     Doc = cb_context:doc(Context),
-    kz_json:get_list_value(?COMMENTS, cb_port_requests:filter_private_comments(Context, Doc), []);
+    kzd_port_requests:comments(cb_port_requests:filter_private_comments(Context, Doc), []);
 get_comments(Context, _) ->
     kz_json:get_value(?COMMENTS, cb_context:doc(Context), []).
 

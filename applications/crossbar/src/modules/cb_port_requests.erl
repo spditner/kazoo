@@ -1523,15 +1523,14 @@ set_port_authority(Context) ->
 -spec authority_type(cb_context:context(), req_nouns()) -> {authority_type() , kz_term:ne_binary()}.
 authority_type(Context, Nouns) ->
     Accounts = props:get_value(<<"accounts">>, Nouns),
-    PortRequests = props:get_value(<<"port_requests">>, Nouns) =/= 'undefined',
-    authority_type(Context, PortRequests, Accounts).
+    authority_type(Context, Nouns, Accounts).
 
--spec authority_type(cb_context:context(), boolean(), path_tokens() | 'undefined') -> cb_context:context().
-authority_type(Context, 'true', 'undefined') ->
+-spec authority_type(cb_context:context(), req_nouns(), path_tokens() | 'undefined') -> cb_context:context().
+authority_type(Context, _Nouns, 'undefined') ->
     {'agent', cb_context:auth_account_id(Context)};
-authority_type(Context, 'true', [_AccountId, ?DESCENDANTS]) ->
+authority_type(Context, _Nouns, [_AccountId, ?DESCENDANTS]) ->
     {'descendants', cb_context:account_id(Context)};
-authority_type(Context, 'true', [_AccountId | _]) ->
+authority_type(Context, _Nouns, [_AccountId | _]) ->
     {'account', cb_context:account_id(Context)}.
 
 -spec find_port_authority(authority_type(), kz_term:ne_binary()) -> kz_term:api_ne_binary().

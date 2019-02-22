@@ -279,7 +279,8 @@ check_port_action_required(PortRequest, Context) ->
 
 -spec port_request_last_comment(cb_context:context(), kzd_port_requests:doc()) -> kz_json:object().
 port_request_last_comment(Context, PortRequest) ->
-    case cb_port_requests:filter_private_comments(Context, PortRequest) of
+    JObj = cb_port_requests:filter_private_comments(Context, PortRequest),
+    case kzd_port_requests:comments(JObj, []) of
         [] -> kz_json:new();
         Comments -> lists:last(Comments)
     end.
