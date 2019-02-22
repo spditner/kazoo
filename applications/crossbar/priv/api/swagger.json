@@ -4283,23 +4283,6 @@
         },
         "comment": {
             "description": "Schema for a single comment",
-            "oneOf": [
-                {
-                    "required": [
-                        "account_id",
-                        "content",
-                        "timestamp",
-                        "user_id"
-                    ]
-                },
-                {
-                    "required": [
-                        "author",
-                        "content",
-                        "timestamp"
-                    ]
-                }
-            ],
             "properties": {
                 "account_id": {
                     "description": "Account ID of the commenter.",
@@ -4331,6 +4314,11 @@
                     "type": "string"
                 }
             },
+            "required": [
+                "author",
+                "content",
+                "timestamp"
+            ],
             "type": "object"
         },
         "comments": {
