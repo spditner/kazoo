@@ -249,21 +249,27 @@ read(Context, Id) ->
 %%------------------------------------------------------------------------------
 -spec create(cb_context:context()) -> cb_context:context().
 create(Context) ->
+    create(Context, cb_context:fetch(Context, 'resource')).
+
+-spec create(cb_context:context(), {kz_term:ne_binary(), kz_term:ne_binaries()}) -> cb_context:context().
+create(Context, {<<"port_requests">>, _}) ->
+    NewComments = cb_context:fetch(Context, 'req_comments', []),
+    case phonebook:maybe_add_comment(Context, NewComments) of
+        {'ok', _} ->
+            crossbar_doc:save(Context);
+        {'error', _} ->
+            cb_context:add_system_error('datastore_fault', <<"unable to submit comment to carrier">>, Context)
+    end;
+create(Context, Resource) ->
     Doc = cb_context:doc(Context),
     Comments = kz_json:get_value(?COMMENTS, Doc, []),
     ReqData = cb_context:req_data(Context),
     NewComments = kz_json:get_value(?COMMENTS, ReqData, []),
     Doc1 = kz_json:set_value(?COMMENTS, sort(Comments ++ NewComments), Doc),
-    maybe_save(Context, Doc1, NewComments, cb_context:fetch(Context, 'resource')).
+    maybe_save(Context, Doc1, NewComments, Resource).
 
--spec maybe_save(cb_context:context(), kz_json:object(), kz_term:ne_binary(), kz_term:ne_binaries()) -> cb_context:context().
-maybe_save(Context, Doc, Comments, {<<"port_requests">>, _}) ->
-    case phonebook:maybe_add_comment(Context, Comments) of
-        {'ok', _} ->
-            crossbar_doc:save(cb_context:set_doc(Context, Doc));
-        {'error', _} ->
-            cb_context:add_system_error('datastore_fault', <<"unable to submit comment to carrier">>, Context)
-    end;
+-spec maybe_save(cb_context:context(), kz_json:object(), kz_term:ne_binary(), {kz_term:ne_binary(), kz_term:ne_binaries()}) ->
+                        cb_context:context().
 maybe_save(Context, Doc, _, _) ->
     crossbar_doc:save(cb_context:set_doc(Context, Doc)).
 
@@ -356,15 +362,15 @@ load_doc(Context) ->
 
 -spec load_doc(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binaries()) ->
                       cb_context:context().
-load_doc(Context, <<"port_requests">>, [Id]) ->
-    ReqData = cb_context:req_data(Context),
-    C1 = cb_context:store(Context, 'req_comments', kzd_port_requests:comments(ReqData, [])),
-    C2 = cb_port_requests:load_port_request(cb_port_requests:set_port_authority(C1), Id),
-    case cb_context:resp_status(C2) =:= 'success' of
+load_doc(Context0, <<"port_requests">>, [Id]) ->
+    Comments = kzd_port_requests:comments(cb_context:req_data(Context0), []),
+    Context1 = cb_context:store(Context0, 'req_comments', Comments),
+    Context2 = cb_port_requests:load_port_request(cb_port_requests:set_port_authority(Context1), Id),
+    case cb_context:resp_status(Context2) =:= 'success' of
         'true' ->
-            cb_port_requests:validate_port_comments(C2, fun kz_term:identity/1);
+            cb_port_requests:validate_port_comments(Context2, fun kz_term:identity/1);
         'false' ->
-            C2
+            Context2
     end;
 load_doc(Context, _Type, [Id]) ->
     crossbar_doc:load(Id, Context, ?TYPE_CHECK_OPTION_ANY);

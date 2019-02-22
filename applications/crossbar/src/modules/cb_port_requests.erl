@@ -111,7 +111,8 @@ authorize(Context, [{<<"port_requests">>, []}], ?HTTP_GET) ->
     end;
 authorize(Context, [{<<"port_requests">>, []}], _) ->
     {'stop', cb_context:add_system_error('forbidden', Context)};
-authorize(_Context, _, _) -> 'false'.
+authorize(_Context, _, _) ->
+    'false'.
 
 %%------------------------------------------------------------------------------
 %% @doc Given the path tokens related to this module, what HTTP methods are
@@ -625,17 +626,22 @@ validate_port_comments(Context, OnSuccess, []) ->
 validate_port_comments(Context, OnSuccess, NewComments) ->
     C1 = validate_comments(Context, NewComments),
     case cb_context:resp_status(C1) =:= 'success' of
-        'true' ->
-            OnSuccess(Context);
-        'false' ->
-            C1
+        'true' -> OnSuccess(C1);
+        'false' -> C1
     end.
 
 -spec validate_comments(cb_context:context(), kz_json:objects()) -> cb_context:context().
 validate_comments(Context, NewComments) ->
     IsPortAuthority = cb_context:fetch(Context, 'is_port_authority', 'false')
         orelse cb_context:is_superduper_admin(Context),
-    validate_comments(Context, NewComments, IsPortAuthority).
+    ContextToValidate = cb_context:set_req_data(Context, kzd_port_requests:set_comments(kz_json:new(), NewComments)),
+    ValidatedContext = cb_context:validate_request_data(<<"comments">>, ContextToValidate),
+    case cb_context:resp_status(ValidatedContext) =:= 'success' of
+        'true' ->
+            ValidatedComments = kzd_port_requests:comments(cb_context:doc(ValidatedContext)),
+            validate_comments(Context, ValidatedComments, IsPortAuthority);
+        'false' -> ValidatedContext
+    end.
 
 -spec validate_comments(cb_context:context(), kz_json:objects(), boolean()) -> cb_context:context().
 validate_comments(Context, NewComments, 'false') ->
@@ -644,7 +650,8 @@ validate_comments(Context, NewComments, 'false') ->
               ,{[<<"is_private">>], fun kz_term:is_true/1}
               ],
     case run_comment_filter(NewComments, Filters) of
-        [] -> add_commentors_info(Context, NewComments);
+        [] ->
+            add_commentors_info(Context, NewComments);
         [_|_] ->
             Msg = kz_json:from_list(
                     [{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
@@ -653,18 +660,19 @@ validate_comments(Context, NewComments, 'false') ->
             cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
     end;
 validate_comments(Context, NewComments, 'true') ->
-    Filters = [{[<<"superduper_comment">>], fun kz_term:is_true/1} %% old key
-              ,{[<<"is_private">>], fun kz_term:is_true/1}
+    Filters = [{[<<"superduper_comment">>], fun kz_term:is_false/1} %% old key
+              ,{[<<"is_private">>], fun kz_term:is_false/1}
               ],
     case [Comment
           || Comment <- run_comment_filter(NewComments, Filters),
              kz_json:is_true(<<"action_required">>, Comment, 'false')
          ]
     of
-        [] -> add_commentors_info(Context, NewComments);
+        [] ->
+            add_commentors_info(Context, NewComments);
         [_|_] ->
             Msg = kz_json:from_list(
-                    [{<<"message">>, <<"you're not allowed to action_required a private comment">>}
+                    [{<<"message">>, <<"setting action_required on public comment is not allowed">>}
                     ,{<<"cause">>, <<"comments">>}
                     ]),
             cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
@@ -674,9 +682,20 @@ validate_comments(Context, NewComments, 'true') ->
 add_commentors_info(Context, NewComments) ->
     Doc = cb_context:doc(Context),
     DbComments = kzd_port_requests:comments(cb_context:fetch(Context, 'db_doc'), []),
-    UserInfo = get_commentor_info(Context, cb_context:auth_doc(Context)),
-    Updated = [kz_doc:setters(Comment, props:filter_undefined(UserInfo)) || Comment <- NewComments],
-    cb_context:set_doc(Context, kzd_port_requests:set_comments(Doc, cb_comments:sort(DbComments ++ Updated))).
+    Updated = [update_comment(Context, Comment)
+               || Comment <- NewComments
+              ],
+    Setters = [{fun cb_context:set_doc/2, kzd_port_requests:set_comments(Doc, cb_comments:sort(DbComments ++ Updated))}
+              ,{fun cb_context:store/3, 'req_comments', Updated}
+              ],
+    cb_context:setters(Context, Setters).
+
+-spec update_comment(cb_context:context(), kz_json:object()) -> kz_json:object().
+update_comment(Context, Comment) ->
+    Setters = [{fun kzd_comment:set_is_private/2, kz_json:is_true(<<"superduper_comment">>, Comment)}
+               | get_commentor_info(Context, cb_context:auth_doc(Context))
+              ],
+    kz_doc:setters(kz_json:delete_key(<<"superduper_comment">>, Comment), Setters).
 
 -spec get_commentor_info(cb_context:context(), kz_term:api_object()) -> kz_term:proplist().
 get_commentor_info(Context, 'undefined') ->
@@ -688,10 +707,20 @@ get_commentor_info(Context, AuthDoc) ->
             ,{fun kzd_comment:set_user_id/2, kz_doc:id(AuthDoc)}
             ,{fun kzd_comment:set_author/2, kzd_users:full_name(AuthDoc)}
             ];
-        _ ->
-            [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}
-            ,{fun kzd_comment:set_author/2, kz_json:get_value(<<"owner_id">>, AuthDoc)}
-            ]
+        _LOL ->
+            AuthAccountId = cb_context:auth_account_id(Context),
+            UserId = kz_json:get_value(<<"owner_id">>, AuthDoc),
+            case kzd_users:fetch(AuthAccountId, UserId) of
+                {'ok', UserDoc} ->
+                    [{fun kzd_comment:set_account_id/2, AuthAccountId}
+                    ,{fun kzd_comment:set_user_id/2, UserId}
+                    ,{fun kzd_comment:set_author/2, kzd_users:full_name(UserDoc)}
+                    ];
+                {'error', _} ->
+                    [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}
+                    ,{fun kzd_comment:set_user_id/2, UserId}
+                    ]
+            end
     end.
 
 %%------------------------------------------------------------------------------
@@ -1247,21 +1276,23 @@ load_attachment(AttachmentId, Context) ->
 
 -spec maybe_move_state(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 maybe_move_state(Context, PortState) ->
+    maybe_move_state(Context, PortState, cb_context:resp_status(Context)).
+
+maybe_move_state(Context, PortState, 'success') ->
     Metadata = knm_port_request:transition_metadata(cb_context:auth_account_id(Context)
                                                    ,cb_context:auth_user_id(Context)
                                                    ,cb_context:req_value(Context, ?REQ_TRANSITION)
                                                    ),
-    AllowedSubmitterState = is_submitter_move_state_allowed(Context, PortState),
-    try cb_context:resp_status(Context) =:= 'success'
-             andalso knm_port_request:maybe_transition(cb_context:doc(Context), Metadata, PortState)
-    of
+    try knm_port_request:attempt_transition(cb_context:doc(Context), Metadata, PortState) of
         'false' -> Context;
-        {'ok', PortRequest} when AllowedSubmitterState ->
+        {'ok', PortRequest} ->
             lager:debug("loaded new port request state ~s", [PortState]),
             cb_context:set_doc(Context, PortRequest);
-        {'ok', _} ->
+        {'error', 'user_not_allowed'} ->
             Msg = kz_json:from_list(
-                    [{<<"message">>, <<"You're not allowed to move to new state from current state">>}
+                    [{<<"message">>
+                     ,<<"you're not allowed to change to new state from current state, please contact your port authority">>
+                     }
                     ,{<<"cause">>, PortState}
                     ]),
             cb_context:add_validation_error(<<"port_state">>, <<"enum">>, Msg, Context);
@@ -1277,19 +1308,9 @@ maybe_move_state(Context, PortState) ->
     catch
         'throw':{'error', 'failed_to_charge'} ->
             cb_context:add_system_error('no_credit', Context)
-    end.
-
--spec is_submitter_move_state_allowed(cb_context:context(), kz_term:ne_binary()) -> boolean().
-is_submitter_move_state_allowed(_, ?PORT_UNCONFIRMED) -> 'true';
-is_submitter_move_state_allowed(_, ?PORT_SUBMITTED) -> 'true';
-is_submitter_move_state_allowed(Context, ?PORT_CANCELED) ->
-    Doc = cb_context:doc(Context),
-    cb_context:fetch(Context, 'is_port_authority', 'false')
-        orelse cb_context:is_superduper_admin(Context)
-        orelse knm_port_request:current_state(Doc) =:= ?PORT_UNCONFIRMED;
-is_submitter_move_state_allowed(Context, _) ->
-    cb_context:fetch(Context, 'is_port_authority', 'false')
-        orelse cb_context:is_superduper_admin(Context).
+    end;
+maybe_move_state(Context, _, _) ->
+    Context.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -1335,7 +1356,7 @@ port_state_change_notify(Context, Id, State) ->
             [{<<"Account-ID">>, cb_context:account_id(Context)}
             ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
             ,{<<"Port-Request-ID">>, Id}
-            ,{<<"Reason">>, state_change_reason_props(Context, cb_context:req_value(Context, ?REQ_TRANSITION))}
+            ,{<<"Reason">>, state_change_reason(Context, cb_context:req_value(Context, ?REQ_TRANSITION))}
             ,{<<"Version">>, cb_context:api_version(Context)}
              | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
             ]),
@@ -1365,14 +1386,16 @@ state_change_notify_fun(?PORT_REJECTED) ->
 state_change_notify_fun(?PORT_CANCELED) ->
     fun kapi_notifications:publish_port_cancel/1.
 
--spec state_change_reason_props(cb_context:context(), kz_term:api_ne_binary()) -> kz_term:api_proplist().
-state_change_reason_props(Context, ?NE_BINARY=Reason) ->
-    [{<<"user_id">>, cb_context:auth_user_id(Context)}
-    ,{<<"account_id">>, cb_context:auth_account_id(Context)}
-    ,{<<"timestamp">>, kz_doc:modified(cb_context:doc(Context))}
-    ,{<<"content">>, Reason}
-    ];
-state_change_reason_props(_, _) ->
+-spec state_change_reason(cb_context:context(), kz_term:api_ne_binary()) -> kz_term:api_object().
+state_change_reason(Context, ?NE_BINARY=Reason) ->
+    kz_json:from_list(
+      [{<<"user_id">>, cb_context:auth_user_id(Context)}
+      ,{<<"account_id">>, cb_context:auth_account_id(Context)}
+      ,{<<"timestamp">>, kz_doc:modified(cb_context:doc(Context))}
+      ,{<<"content">>, Reason}
+      ]
+     );
+state_change_reason(_, _) ->
     'undefined'.
 
 -spec maybe_revert_patch(cb_context:context(), boolean()) -> cb_context:context().
@@ -1415,15 +1438,15 @@ send_port_comment_notifications(Context, Id) ->
 
 -spec send_port_comment_notifications(cb_context:context(), kz_term:ne_binary(), kz_json:objects()) -> 'ok'.
 send_port_comment_notifications(Context, Id, NewComments) ->
-    _ = lists:foldl(fun send_port_comment_notification/2, {Context, Id, length(NewComments), 0}, NewComments),
+    _ = lists:foldl(fun send_port_comment_notification/2, {Context, Id, length(NewComments), 1}, NewComments),
     'ok'.
 
 -spec send_port_comment_notification(kz_json:object(), {cb_context:context(), kz_term:ne_binary(), non_neg_integer(), non_neg_integer()}) -> 'ok'.
 send_port_comment_notification(NewComment, {Context, Id, TotalNew, Index}) ->
-    Props = [{<<"user_id">>, cb_context:auth_user_id(Context)}
-            ,{<<"account_id">>, cb_context:auth_account_id(Context)}
-            ],
-    Comment = kz_json:set_values(Props, NewComment),
+    Setters = [{fun kzd_comment:set_user_id/2, kzd_comment:user_id(NewComment, cb_context:auth_user_id(Context))}
+              ,{fun kzd_comment:set_account_id/2, kzd_comment:account_id(NewComment, cb_context:auth_account_id(Context))}
+              ],
+    Comment = kz_doc:setters(NewComment, Setters),
     Req = [{<<"Account-ID">>, cb_context:account_id(Context)}
           ,{<<"Authorized-By">>, cb_context:auth_account_id(Context)}
           ,{<<"Port-Request-ID">>, Id}

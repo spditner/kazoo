@@ -17,7 +17,7 @@
         ,normalize_attachments/1
         ,normalize_numbers/1
         ,transition_to_complete/2
-        ,maybe_transition/3
+        ,attempt_transition/3
         ,compatibility_transition/2
         ,assign_to_app/3
         ,send_submitted_requests/0
@@ -38,7 +38,7 @@
 -define(ACTIVE_PORT_IN_NUMBERS, <<"port_requests/port_in_numbers">>).
 
 -type transition_response() :: {'ok', kz_json:object()} |
-                               {'error', 'invalid_state_transition' | kz_json:object()}.
+                               {'error', 'invalid_state_transition' | 'user_not_allowed' | kz_json:object()}.
 
 -define(NAME_KEY, <<"name">>).
 -define(NUMBERS_KEY, <<"numbers">>).
@@ -269,6 +269,42 @@ transition_to_canceled(JObj, Metadata) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
+-spec attempt_transition(kz_json:object(), transition_metadata(), kz_term:ne_binary()) -> transition_response().
+attempt_transition(PortReq, Metadata, ToState) ->
+    PortAuthority = kzd_port_requests:find_port_authority(PortReq),
+    case is_user_allowed_to_move_state(PortReq, Metadata, ToState, PortAuthority) of
+        'true' -> maybe_transition(PortReq, Metadata, ToState);
+        'false' ->
+            {'error', 'user_not_allowed'}
+    end.
+
+-spec is_user_allowed_to_move_state(kz_json:object(), transition_metadata(), kz_term:ne_binary(), kz_term:api_ne_binary()) ->
+                                           transition_response().
+is_user_allowed_to_move_state(PortReq, #{}, _, 'undefined') ->
+    lager:debug("port authority id is missing, disallowing state chnage for port ~s", [kz_doc:id(PortReq)]),
+    'false';
+is_user_allowed_to_move_state(PortReq, #{auth_account_id := undefined}, _, _) ->
+    lager:debug("auth account is is missing, disallowing state change for port ~s", [kz_doc:id(PortReq)]),
+    'false';
+is_user_allowed_to_move_state(PortReq, #{auth_account_id := AuthAccountId}, ToState, PortAuthority)
+  when ToState =:= ?PORT_UNCONFIRMED;
+       ToState =:= ?PORT_SUBMITTED ->
+    AuthAccountId =:= PortAuthority
+        orelse kz_doc:account_id(PortReq) =:= AuthAccountId
+        orelse kz_services_reseller:get_id(kz_doc:id(PortReq)) =:= AuthAccountId
+        orelse kz_services_reseller:get_id('undefined') =:= AuthAccountId; %% checks if superduper
+is_user_allowed_to_move_state(PortReq, #{auth_account_id := AuthAccountId}, ?PORT_CANCELED, PortAuthority) ->
+    AuthAccountId =:= PortAuthority
+        orelse (current_state(PortReq) =:= ?PORT_UNCONFIRMED
+                andalso (kzkz_doc:account_id(PortReq) =:= AuthAccountId
+                         orelse kz_services_reseller:get_id(kz_doc:id(PortReq)) =:= AuthAccountId
+                        )
+               )
+        orelse kz_services_reseller:get_id('undefined') =:= AuthAccountId; %% checks if superduper
+is_user_allowed_to_move_state(_, #{auth_account_id := AuthAccountId}, _, PortAuthority) ->
+    AuthAccountId =:= PortAuthority
+        orelse kz_services_reseller:get_id('undefined') =:= AuthAccountId. %% checks if superduper
+
 -spec maybe_transition(kz_json:object(), transition_metadata(), kz_term:ne_binary()) -> transition_response().
 maybe_transition(PortReq, Metadata, ?PORT_SUBMITTED) ->
     transition_to_submitted(PortReq, Metadata);
